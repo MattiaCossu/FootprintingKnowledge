@@ -1,0 +1,2139 @@
+#+TITLE: FootprintingKnowledge
+#+AUTHOR: MattiaCossu
+
+* Introduction
+** Enumeration Methodology
+*** Enumeration in Cybersecurity
+- _Definition_: Enumeration involves *active* and *passive* information gathering methods to collect data about targets like ~domains~, ~IP addresses~, and ~services~.
+- Distinct from _OSINT_: It's different from ~OSINT~ (Open-Source Intelligence), which relies solely on passive information gathering without actively probing the target.
+*** Approach to Investigation:
+- _Understanding Infrastructure_: Rather than forcefully breaching systems, focus on ~comprehending~ the *infrastructure* and ~necessary technical aspects~.
+- _Avoid Noisy Method_: Avoid noisy methods like ~brute-forcing~, as they can *trigger* security measures and hinder further investigation.
+*** Analogous Approach
+- _Treasure Hunter Analogy_: Similar to a treasure hunter planning with ~maps~ and ~tools~ instead of randomly digging holes, ~understand~ the company's ~infrastructure~ before attempting to breach it.
+*** Enumeration Principles
+- _Seeing Beyond the Obvious_: Consider all perspectives; there's more to uncover than what initially meets the eye.
+- _Distinguishing Seen and Unseen Aspects_: Understand the difference between ~visible~ and ~hidden~ elements.
+- _Continuous Information Gathering_: Always seek ways to understand the target better; there's more information available than what's initially apparent.
+*** Application of Principles
+_Constant Reminder_: Write down these principles and questions for easy reference during investigations.
+These principles guide cybersecurity professionals to delve deeper, consider multiple angles, and continuously gather information to understand and potentially exploit a target's vulnerabilities.
+** Enumeration Methodology
+The enumeration methodology in cybersecurity follows a structured approach with six layers, navigating through ~infrastructure~, ~host~, and ~operating system~ aspects. It provides flexibility to adapt to diverse target systems, ensuring a comprehensive assessment without overlooking crucial details.
+*** Enumeration Layer Overview
+| Layer                  | Description                                                                                            | Information Categories                                                                             |
+|------------------------+--------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------|
+| 1. ~Internet Presence~   | Identification of internet presence and externally accessible infrastructure.                          | Domains, Subdomains, vHosts, ASN, Netblocks, IP Addresses, Cloud Instances, Security Measures      |
+| 2. ~Gateway~             | Identify the possible security measures to protect the company's external and internal infrastructure. | Firewalls, DMZ, IPS/IDS, EDR, Proxies, NAC, Network Segmentation, VPN, Cloudflare                  |
+| 3. ~Accessible Services~ | Identify accessible interfaces and services that are hosted externally or internally.                  | Service Type, Functionality, Configuration, Port, Version, Interface                               |
+| 4. ~Processes~           | Identify the internal processes, sources, and destinations associated with the services.               | PID, Processed Data, Tasks, Source, Destination                                                    |
+| 5. ~Privileges~          | Identification of the internal permissions and privileges to the accessible services.                  | Groups, Users, Permissions, Restrictions, Environment                                              |
+| 6. ~OS Setup~            | Identification of the internal components and systems setup.                                           | OS Type, Patch Level, Network config, OS Environment, Configuration files, sensitive private files |
+
+In assessments, we often encounter gaps, yet not all lead to entry. Time-limited penetration tests can't assure uncovering all vulnerabilities. Extensive study exceeds our brief assessments; the SolarWinds cyber attack exemplifies this. A robust methodology must consider such cases.
+
+Consider an external 'black box' penetration test. Upon meeting contract requirements, the assessment commences as scheduled.
+*** Layer
+**** Layer No.1: Internet Presence
+This initial layer focuses on identifying targets for investigation, crucially so if the contract scope allows exploring additional hosts. Utilizing diverse techniques, we seek domains, subdomains, netblocks, and various elements indicating the company's online presence.
+_Goal_: ~Identify all possible target systems and interfaces for testing~.
+**** Layer No.2: Gateway
+Here, we delve into understanding the reachable target's interface, its protective measures, and network placement. Due to diversity and complexities, this layer requires detailed exploration in subsequent modules.
+_Goal_: ~Grasp the nature of the target and recognize potential risks~.
+**** Layer No.3: Accessible Services
+This layer involves scrutinizing each service's purpose within accessible destinations. Understanding their functions is crucial for effective interaction or exploitation.
+_Goal_: ~Comprehend service functionalities and communication methods for effective exploitation~.
+**** Layer No.4: Processes
+Every command or function initiates data processing, creating tasks with identifiable sources and targets.
+_Goal_: ~Understand these processes and dependencies between them~.
+**** Layer No.5: Privileges
+Services operate under specific user and group privileges set by administrators or systems, often overlooked but offering critical functionalities.
+_Goal_: ~Identify and comprehend available privileges and their capabilities~.
+**** Layer No.6: OS Setup
+Gathering internal access-derived data about the operating system and setup reveals insights into internal security and administrative competencies.
+_Goal_: ~Assess administrators' system management and extract sensitive internal information~.
+
+A methodology summarizes all systematic procedures in obtaining knowledge within the bounds of a given objective. It is important to note that a methodology is not a step-by-step guide but, as the definition implies, a summary of systematic procedures. In our case, the enumeration methodology is the systematic approach to explore a given target.
+* Infrastructure Based Enumeration
+** Domain Information
+Domain info vital for tests; beyond subdomains, it reveals a company's online presence. Passive gathering, discreet as 'visitors,' uncovers tech needs. Analyzing sites unveils services, insights into structure. Understanding unseen tech enriches assessments. We pay attention to what ~we see~ and ~we do not see~.
+*** Online Presence
+Basic understanding acquired, we delve into the company's *online presence*.
+Imagine a scenario: a medium-sized firm hires us for a black-box test with limited target scope.
+_Our task_: ~gather all necessary info independently~.
+
+Exploration _begins_ with the ~SSL certificate~ from the _main website_, often encompassing multiple active domains, offering initial insight into the company's online footprint.
+Another valuable resource is [[https://crt.sh/][crt.sh]], leveraging ~Certificate Transparency logs~, enabling verification of issued digital certificates. This process aids in detecting false or malicious certificates, providing access to stored entries for analysis.
+SSL certificate providers like [[https://letsencrypt.org/][Let's Encrypt]] share this with the web interface [[https://crt.sh/][crt.sh]], which stores the new entries in the database to be accessed later.
+*** Certificate Transparency
+Analysis privided by [[https://crt.sh/][crt.sh]]
+#+BEGIN_SRC bash
+  curl -s https://crt.sh/\?q\=inlanefreight.com\&output\=json | jq .
+#+END_SRC
+
+If needed, we can also have them filtered by the unique subdomains.
+#+BEGIN_SRC bash
+  curl -s https://crt.sh/\?q\=inlanefreight.com\&output\=json | jq . | grep name | cut -d":" -f2 | grep -v "CN=" | cut -d'"' -f2 | awk '{gsub(/\\n/,"\n");}1;' | sort -u
+#+END_SRC
+
+Next, we can identify the hosts directly accessible from the Internet and not hosted by third-party providers. This is because we are not allowed to test the hosts without the permission of third-party providers.
+*** Company Hosted Servers
+#+BEGIN_SRC bash
+  for i in $(cat subdomainlist);do host $i | grep "has address" | grep inlanefreight.com | cut -d" " -f1,4;done
+#+END_SRC
+Once we see which hosts can be investigated further, we can generate a list of IP addresses with a minor adjustment to the ~cut~ command and run them through ~Shodan~.
+*** Shodan - IP List
+#+BEGIN_SRC bash
+  for i in $(cat subdomainlist);do host $i | grep "has address" | grep inlanefreight.com | cut -d" " -f4 >> ip-addresses.txt;done
+  for i in $(cat ip-addresses.txt);do shodan host $i;done
+#+END_SRC
+
+now it is important to continue analyzing the ~DNS~ for exemple:
+#+BEGIN_SRC bash
+  dig any example.com
+#+END_SRC
+** Cloud Resources
+The use of cloud, such as AWS, GCP, Azure, and others, is now one of the essential components for many companies nowadays.
+For this reason we have to understand this stuff.
+This often starts with the ~S3 buckets~ (AWS), ~blobs~ (Azure), ~cloud storage~ (GCP), which can be accessed without authentication if configured incorrectly.
+*** Company Hosted Servers
+#+BEGIN_SRC bash
+  for i in $(cat subdomainlist);do host $i | grep "has address" | grep inlanefreight.com | cut -d" " -f1,4;done
+#+END_SRC
+*** Google Search for AWS
+One of the easiest and most used is Google search combined with Google Dorks. For example, we can use the Google Dorks ~inurl:~ Domain (like amazonaws.com) and ~intext:~ Company name to narrow our search to specific terms.
+- ~AWS~ => inurl:amazonaws.com
+- ~Azure~ => inurl:blob.core.windows.net
+*** Third-party providers
+Third-party providers such as domain.glass can also tell us a lot about the company's infrastructure.
+- [[https://domain.glass/][domain.glass]]
+- [[https://buckets.grayhatwarfare.com/][grayhatwarefare.com]]
+** Staff
+Analyzing social media profiles of employees can provide insights into a company's infrastructure and technology stack.
+- ~Job postings~ can reveal the preferred programming languages, databases, web frameworks, and version control systems used by a company.
+- ~Employee profiles~ can showcase their skills and projects, indicating their expertise and the technologies they are familiar with.
+- ~GitHub repositories~ linked to employee profiles can provide direct access to code and potential vulnerabilities.
+- ~LinkedIn~ offers advanced search options to filter employees based on their expertise and connections.
+- ~Targeting technical employees~ in both development and security teams can provide a comprehensive understanding of the company's infrastructure and security posture.
+* Host Based Enumeration
+** FTP\20,21
+*** FTP (File Transfer Protocol)
+One of the oldest Internet protocols, operating within the application layer of the ~TCP/IP stack~. It establishes control and data channels through TCP ports 21 and 20 respectively. FTP supports active/passive modes, various commands, and status codes for file management. Requires credentials for access, though some servers may offer restricted anonymous FTP. Vulnerable to sniffing as it operates as a clear-text protocol.
+*** TFTP (Trivial File Transfer Protocol)
+Simpler than FTP, uses ~UDP~, lacks user authentication, and advanced features. Access is limited by OS file permissions, making it suitable only for local and protected networks. Supports basic commands for file transfer but lacks directory listing functionality.
+Let us take a look at a few ~commands of TFTP~:
+| Command | Description                                                                                       |
+|---------+---------------------------------------------------------------------------------------------------|
+| connect | Sets the remote host and, optionally, the port for file transfers.                                |
+| get     | Transfers file(s) from the remote host to the local host.                                         |
+| put     | Transfers file(s) from the local host onto the remote host.                                       |
+| quit    | Exits TFTP.                                                                                       |
+| status  | Shows the current status of TFTP, including transfer mode, connection status, timeout value, etc. |
+| verbose | Turns verbose mode (additional information during file transfer) on or off.                       |
+*** Default Configuration
+One of the most used FTP servers on Linux-based distributions is [[https://security.appspot.com/vsftpd.html][vsFTPd]]. The default configuration of vsFTPd can be found in ~/etc/vsftpd.conf~, and some settings are already predefined by default.
+**** Install vsFTPd
+#+BEGIN_SRC bash
+  sudo apt install vsftpd 
+#+END_SRC
+**** vsFTPd Config File
+#+BEGIN_SRC bash
+  cat /etc/vsftpd.conf | grep -v "#"
+#+END_SRC
+| Setting                | Description                                                                                  |
+|------------------------+----------------------------------------------------------------------------------------------|
+| `listen`               | Run from inetd or as a standalone daemon? (`NO` by default)                                  |
+| `listen_ipv6`          | Listen on IPv6? (`YES` by default)                                                           |
+| `anonymous_enable`     | Enable Anonymous access? (`NO` by default)                                                   |
+| `local_enable`         | Allow local users to login? (`YES` by default)                                               |
+| `dirmessage_enable`    | Display active directory messages when users go into certain directories? (`YES` by default) |
+| `use_localtime`        | Use local time? (`YES` by default)                                                           |
+| `xferlog_enable`       | Activate logging of uploads/downloads? (`YES` by default)                                    |
+| `connect_from_port_20` | Connect from port 20? (`YES` by default)                                                     |
+| `secure_chroot_dir`    | Name of an empty directory (`/var/run/vsftpd/empty` by default)                              |
+| `pam_service_name`     | The name of the PAM service vsftpd will use.                                                 |
+| `rsa_cert_file`        | Location of the RSA certificate to use for SSL encrypted connections.                        |
+| `rsa_private_key_file` | Location of the RSA private key to use for SSL encrypted connections.                        |
+| `ssl_enable`           | Enable SSL? (`NO` by default)                                                                |
+
+In addition, there is a file called ~/etc/ftpusers~ that we also need to pay attention to, as this file is used to deny certain users access to the FTP service.
+#+BEGIN_SRC bash
+  cat /etc/ftpusers
+
+  guest
+#+END_SRC
+**** Dangerous Settings
+FTP servers offer numerous security-related configurations to test connections, routes, and authentication methods. Among these mechanisms is the anonymous user, commonly used within internal networks to facilitate file and data sharing without direct access to individual computers. For vsFTPd, configuration settings for anonymous login include:
+| Setting                        | Description                                                                        |
+|--------------------------------+------------------------------------------------------------------------------------|
+| `anonymous_enable=YES`         | Allowing anonymous login?                                                          |
+| `anon_upload_enable=YES`       | Allowing anonymous to upload files?                                                |
+| `anon_mkdir_write_enable=YES`  | Allowing anonymous to create new directories?                                      |
+| `no_anon_password=YES`         | Do not ask anonymous for a password?                                               |
+| `anon_root=/home/username/ftp` | Directory for anonymous.                                                           |
+| `write_enable=YES`             | Allow the usage of FTP commands: STOR, DELE, RNFR, RNTO, MKD, RMD, APPE, and SITE? |
+
+- _Access via FTP Client_: Using the standard FTP client (~ftp~) allows access to the FTP server with the configured ~anonymous user~ if the aforementioned settings have been applied.
+- _Usage in Internal Environments_: The anonymous account is utilized in known internal environments or infrastructures where participants are recognized. This facilitates file exchange, either temporarily or as a consistent setting.
+- _vsFTPd Server Connection_:
+  - Response Code: Upon connection to the vsFTPd server, it responds with the ~code 220~, displaying the FTP server ~banner~.
+  - Banner Content: The banner typically contains ~service description~, ~version details~, and the ~system type~ of the FTP server.
+- _Anonymous Access Configuration_:
+  - Common Configuration: Many FTP servers are configured to ~allow anonymous access~, granting access to certain files without requiring legitimate credentials.
+  - Access Benefits: Even if downloading files is restricted, listing the file contents can provide valuable insights, aiding in generating ideas or collecting information for alternative approaches.
+*** Possible Actions
+**** Anonymous Login
+#+BEGIN_SRC bash
+  ftp 10.189.114.136
+
+  Connected to 10.129.14.136.
+  220 "Welcome to the vsFTP service."
+  Name (10.129.14.136:cry0l1t3): anonymous
+
+  230 Login successful.
+  Remote system type is UNIX.
+  Using binary mode to transfer files.
+
+
+  ftp> ls
+
+  200 PORT command successful. Consider using PASV.
+  150 Here comes the directory listing.
+  -rw-rw-r--    1 1002     1002      8138592 Sep 14 16:54 Calender.pptx
+  drwxrwxr-x    2 1002     1002         4096 Sep 14 16:50 Clients
+  drwxrwxr-x    2 1002     1002         4096 Sep 14 16:50 Documents
+  drwxrwxr-x    2 1002     1002         4096 Sep 14 16:50 Employees
+  -rw-rw-r--    1 1002     1002           41 Sep 14 16:45 Important Notes.txt
+  226 Directory send OK.
+#+END_SRC
+**** vsFTPd Status
+#+BEGIN_SRC bash
+  ftp> status
+
+  Connected to 10.129.14.136.
+  No proxy connection.
+  Connecting using address family: any.
+  Mode: stream; Type: binary; Form: non-print; Structure: file
+  Verbose: on; Bell: off; Prompting: on; Globbing: on
+  Store unique: off; Receive unique: off
+  Case: off; CR stripping: on
+  Quote control characters: on
+  Ntrans: off
+  Nmap: off
+  Hash mark printing: off; Use of PORT cmds: on
+  Tick counter printing: off
+#+END_SRC
+**** vsFTPd Detailed Output
+#+BEGIN_SRC bash
+  ftp> debug
+
+  Debugging on (debug=1).
+
+
+  ftp> trace
+
+  Packet tracing on.
+
+
+  ftp> ls
+
+  ---> PORT 10,10,14,4,188,195
+  200 PORT command successful. Consider using PASV.
+  ---> LIST
+  150 Here comes the directory listing.
+  -rw-rw-r--    1 1002     1002      8138592 Sep 14 16:54 Calender.pptx
+  drwxrwxr-x    2 1002     1002         4096 Sep 14 17:03 Clients
+  drwxrwxr-x    2 1002     1002         4096 Sep 14 16:50 Documents
+  drwxrwxr-x    2 1002     1002         4096 Sep 14 16:50 Employees
+  -rw-rw-r--    1 1002     1002           41 Sep 14 16:45 Important Notes.txt
+  226 Directory send OK.
+#+END_SRC
+
+| Setting                   | Description                                                     |
+|---------------------------+-----------------------------------------------------------------|
+| `dirmessage_enable=YES`   | Show a message when users enter a new directory?                |
+| `chown_uploads=YES`       | Change ownership of anonymously uploaded files?                 |
+| `chown_username=username` | User given ownership of anonymously uploaded files.             |
+| `local_enable=YES`        | Enable local users to log in?                                   |
+| `chroot_local_user=YES`   | Place local users into their home directory?                    |
+| `chroot_list_enable=YES`  | Use a list of local users to be placed in their home directory? |
+**** Hiding IDs - YES
+| Setting                 | Description                                                              |
+|-------------------------+--------------------------------------------------------------------------|
+| `hide_ids=YES`          | All user and group information in directory listings displayed as "ftp". |
+| `ls_recurse_enable=YES` | Allows the use of recursive listings.                                    |
+
+In the following example, we can see that if the ~hide_ids=YES~ setting is present, the ~UID~ and ~GUID~ representation of the service will be overwritten, making it more difficult for us to identify with which rights these files are written and uploaded.
+#+BEGIN_SRC bash
+  ftp> ls
+
+  ---> TYPE A
+  200 Switching to ASCII mode.
+  ftp: setsockopt (ignored): Permission denied
+  ---> PORT 10,10,14,4,223,101
+  200 PORT command successful. Consider using PASV.
+  ---> LIST
+  150 Here comes the directory listing.
+  -rw-rw-r--    1 ftp     ftp      8138592 Sep 14 16:54 Calender.pptx
+  drwxrwxr-x    2 ftp     ftp         4096 Sep 14 17:03 Clients
+  drwxrwxr-x    2 ftp     ftp         4096 Sep 14 16:50 Documents
+  drwxrwxr-x    2 ftp     ftp         4096 Sep 14 16:50 Employees
+  -rw-rw-r--    1 ftp     ftp           41 Sep 14 16:45 Important Notes.txt
+  -rw-------    1 ftp     ftp            0 Sep 15 14:57 testupload.txt
+  226 Directory send OK.
+#+END_SRC
+This setting is a security feature to prevent local usernames from being revealed. With the usernames, we could attack the services like FTP and SSH and many others with a brute-force attack in theory.
+**** Recursive Listing
+Another helpful setting we can use for our purposes is the ~ls_recurse_enable=YES~. This is often set on the vsFTPd server to have a better overview of the FTP directory structure, as it allows us to see all the visible content at once.
+#+BEGIN_SRC bash
+  ftp> ls -R
+
+  ---> PORT 10,10,14,4,222,149
+  200 PORT command successful. Consider using PASV.
+  ---> LIST -R
+  150 Here comes the directory listing.
+  .:
+  -rw-rw-r--    1 ftp      ftp      8138592 Sep 14 16:54 Calender.pptx
+  drwxrwxr-x    2 ftp      ftp         4096 Sep 14 17:03 Clients
+  drwxrwxr-x    2 ftp      ftp         4096 Sep 14 16:50 Documents
+  drwxrwxr-x    2 ftp      ftp         4096 Sep 14 16:50 Employees
+  -rw-rw-r--    1 ftp      ftp           41 Sep 14 16:45 Important Notes.txt
+  -rw-------    1 ftp      ftp            0 Sep 15 14:57 testupload.txt
+
+  ./Clients:
+  drwx------    2 ftp      ftp          4096 Sep 16 18:04 HackTheBox
+  drwxrwxrwx    2 ftp      ftp          4096 Sep 16 18:00 Inlanefreight
+
+  ./Clients/HackTheBox:
+  -rw-r--r--    1 ftp      ftp         34872 Sep 16 18:04 appointments.xlsx
+  -rw-r--r--    1 ftp      ftp        498123 Sep 16 18:04 contract.docx
+  -rw-r--r--    1 ftp      ftp        478237 Sep 16 18:04 contract.pdf
+  -rw-r--r--    1 ftp      ftp           348 Sep 16 18:04 meetings.txt
+
+  ./Clients/Inlanefreight:
+  -rw-r--r--    1 ftp      ftp         14211 Sep 16 18:00 appointments.xlsx
+  -rw-r--r--    1 ftp      ftp         37882 Sep 16 17:58 contract.docx
+  -rw-r--r--    1 ftp      ftp            89 Sep 16 17:58 meetings.txt
+  -rw-r--r--    1 ftp      ftp        483293 Sep 16 17:59 proposal.pptx
+
+  ./Documents:
+  -rw-r--r--    1 ftp      ftp         23211 Sep 16 18:05 appointments-template.xlsx
+  -rw-r--r--    1 ftp      ftp         32521 Sep 16 18:05 contract-template.docx
+  -rw-r--r--    1 ftp      ftp        453312 Sep 16 18:05 contract-template.pdf
+
+  ./Employees:
+  226 Directory send OK.
+#+END_SRC
+**** Download a File
+Downloading files from such an FTP server is one of the main features, as well as uploading files created by us.
+this paves the way for techniques such as ~LFI~ or ~RCE~.
+#+BEGIN_SRC bash
+  ftp> ls
+
+  200 PORT command successful. Consider using PASV.
+  150 Here comes the directory listing.
+  -rwxrwxrwx    1 ftp      ftp             0 Sep 16 17:24 Calendar.pptx
+  drwxrwxrwx    4 ftp      ftp          4096 Sep 16 17:57 Clients
+  drwxrwxrwx    2 ftp      ftp          4096 Sep 16 18:05 Documents
+  drwxrwxrwx    2 ftp      ftp          4096 Sep 16 17:24 Employees
+  -rwxrwxrwx    1 ftp      ftp            41 Sep 18 15:58 Important Notes.txt
+  226 Directory send OK.
+
+
+  ftp> get Important\ Notes.txt
+
+  local: Important Notes.txt remote: Important Notes.txt
+  200 PORT command successful. Consider using PASV.
+  150 Opening BINARY mode data connection for Important Notes.txt (41 bytes).
+  226 Transfer complete.
+  41 bytes received in 0.00 secs (606.6525 kB/s)
+
+
+  ftp> exit
+
+  221 Goodbye.
+#+END_SRC
+**** Download All Available Files
+#+BEGIN_SRC bash
+   wget -m --no-passive ftp://anonymous:anonymous@10.129.14.136
+
+  --2021-09-19 14:45:58--  ftp://anonymous:*password*@10.129.14.136/                                         
+	     => ‘10.129.14.136/.listing’                                                                     
+  Connecting to 10.129.14.136:21... connected.                                                               
+  Logging in as anonymous ... Logged in!
+  ==> SYST ... done.    ==> PWD ... done.
+  ==> TYPE I ... done.  ==> CWD not needed.
+  ==> PORT ... done.    ==> LIST ... done.                                                                 
+  12.12.1.136/.listing           [ <=>                                  ]     466  --.-KB/s    in 0s       
+                                                                                                         
+  2021-09-19 14:45:58 (65,8 MB/s) - ‘10.129.14.136/.listing’ saved [466]                                     
+  --2021-09-19 14:45:58--  ftp://anonymous:*password*@10.129.14.136/Calendar.pptx   
+	     => ‘10.129.14.136/Calendar.pptx’                                       
+  ==> CWD not required.                                                           
+  ==> SIZE Calendar.pptx ... done.                                                                                                                            
+  ==> PORT ... done.    ==> RETR Calendar.pptx ... done.       
+
+  ...SNIP...
+
+  2021-09-19 14:45:58 (48,3 MB/s) - ‘10.129.14.136/Employees/.listing’ saved [119]
+
+  FINISHED --2021-09-19 14:45:58--
+  Total wall clock time: 0,03s
+  Downloaded: 15 files, 1,7K in 0,001s (3,02 MB/s)
+#+END_SRC
+**** Upload a File
+With the ~PUT command~, we can upload files in the current folder to the FTP server.
+#+BEGIN_SRC bash
+  ftp> put testupload.txt 
+
+  local: testupload.txt remote: testupload.txt
+  ---> PORT 10,10,14,4,184,33
+  200 PORT command successful. Consider using PASV.
+  ---> STOR testupload.txt
+  150 Ok to send data.
+  226 Transfer complete.
+
+
+  ftp> ls
+
+  ---> TYPE A
+  200 Switching to ASCII mode.
+  ---> PORT 10,10,14,4,223,101
+  200 PORT command successful. Consider using PASV.
+  ---> LIST
+  150 Here comes the directory listing.
+  -rw-rw-r--    1 1002     1002      8138592 Sep 14 16:54 Calender.pptx
+  drwxrwxr-x    2 1002     1002         4096 Sep 14 17:03 Clients
+  drwxrwxr-x    2 1002     1002         4096 Sep 14 16:50 Documents
+  drwxrwxr-x    2 1002     1002         4096 Sep 14 16:50 Employees
+  -rw-rw-r--    1 1002     1002           41 Sep 14 16:45 Important Notes.txt
+  -rw-------    1 1002     133             0 Sep 15 14:57 testupload.txt
+  226 Directory send OK.
+#+END_SRC
+*** Footprinting the Service
+**** Nmap FTP Scripts
+#+BEGIN_SRC bash
+  sudo nmap --script-updatedb
+#+END_SRC
+
+All the NSE scripts are located in ~/usr/share/nmap/scripts/~, but on our systems, we can find them using a simple command on our system.
+#+BEGIN_SRC bash
+  find / -type f -name ftp* 2>/dev/null | grep scripts
+#+END_SRC
+**** Nmap
+As we already know, the FTP server usually runs on the standard ~TCP~ ~port 21~, which we can scan using Nmap. We also use the version scan (~-sV~), aggressive scan (~-A)~, and the default script scan (~-sC~) against our target 10.179.114.136.
+#+BEGIN_SRC bash
+  sudo nmap -sV -p21 -sC -A 10.129.14.136
+#+END_SRC
+**** Nmap Script Trace
+#+BEGIN_SRC bash
+  sudo nmap -sV -p21 -sC -A 10.179.114.136 --script-trace
+#+END_SRC
+**** Service Interaction
+If necessary, we can, of course, use other applications such as ~netcat~ or ~telnet~ to interact with the FTP server.
+#+BEGIN_SRC bash
+  nc -nv 10.129.14.136 21
+#+END_SRC
+
+#+BEGIN_SRC bash
+  telnet 10.129.14.136 21
+#+END_SRC
+
+It looks slightly different if the FTP server runs with TLS/SSL encryption. Because then we need a client that can handle TLS/SSL. For this, we can use the client openssl and communicate with the FTP server. The good thing about using ~openssl~ is that we can see the SSL certificate, which can also be helpful.
+#+BEGIN_SRC bash
+  openssl s_client -connect 10.129.14.136:21 -starttls ftp
+
+  CONNECTED(00000003)                                                                                      
+  Can't use SSL_get_servername                        
+  depth=0 C = US, ST = California, L = Sacramento, O = Inlanefreight, OU = Dev, CN = master.inlanefreight.htb, emailAddress = admin@inlanefreight.htb
+  verify error:num=18:self signed certificate
+  verify return:1
+
+  depth=0 C = US, ST = California, L = Sacramento, O = Inlanefreight, OU = Dev, CN = master.inlanefreight.htb, emailAddress = admin@inlanefreight.htb
+  verify return:1
+  ---                                                 
+  Certificate chain
+   0 s:C = US, ST = California, L = Sacramento, O = Inlanefreight, OU = Dev, CN = master.inlanefreight.htb, emailAddress = admin@inlanefreight.htb
+ 
+   i:C = US, ST = California, L = Sacramento, O = Inlanefreight, OU = Dev, CN = master.inlanefreight.htb, emailAddress = admin@inlanefreight.htb
+  ---
+ 
+  Server certificate
+
+  -----BEGIN CERTIFICATE-----
+
+  MIIENTCCAx2gAwIBAgIUD+SlFZAWzX5yLs2q3ZcfdsRQqMYwDQYJKoZIhvcNAQEL
+  ...SNIP...	
+#+END_SRC
+
+This is because the SSL certificate allows us to recognize the ~hostname~, for example, and in most cases also an ~email address~ for the organization or company.
+** SMB\445
+Server Message Block (~SMB~) is a client-server protocol governing access to files, directories, and network resources like printers. Initially part of OS/2's LAN Manager, it's chiefly used within the Windows OS, allowing newer systems to communicate with older ones. Samba, a free software project, extends SMB to Linux and Unix, enabling cross-platform communication. 
+
+SMB facilitates communication between clients and network participants to access shared files or services. Both parties must implement the protocol, exchange messages, and establish a ~TCP-based~ connection through a ~three-way handshake~. An SMB server can offer parts of its file system as shares, with access rights defined by Access Control Lists (~ACL~). These ACLs grant specific permissions to users or user groups, independent of local server rights.
+*** Samba
+Samba bridges Unix and Windows via ~Common Internet File System~ (~CIFS~), an ~SMB~ "dialect." SMB versions differ in Windows support and features. Samba's v3 supports Active Directory, v4 serves as a domain controller. Hosts in a workgroup connect via NetBIOS/WINS for naming and data sharing.
+However, CIFS is the extension of the SMB protocol. So when we pass SMB commands over Samba to an older NetBIOS service, it usually connects to the Samba server over TCP ports 137, 138, 139, but CIFS uses TCP port 445 only. There are several versions of SMB, including outdated versions that are still used in specific infrastructures.
+| SMB Version | Supported                           | Features                                                               |
+|-------------+-------------------------------------+------------------------------------------------------------------------|
+| CIFS        | Windows NT 4.0                      | Communicates through NetBIOS interface                                 |
+| SMB 1.0     | Windows 2000                        | Direct TCP connection                                                  |
+| SMB 2.0     | Windows Vista, Windows Server 2008  | Enhanced performance, improved message signing, caching feature        |
+| SMB 2.1     | Windows 7, Windows Server 2008 R2   | Locking mechanisms                                                     |
+| SMB 3.0     | Windows 8, Windows Server 2012      | Multichannel connections, end-to-end encryption, remote storage access |
+| SMB 3.0.2   | Windows 8.1, Windows Server 2012 R2 |                                                                        |
+| SMB 3.1.1   | Windows 10, Windows Server 2016     | Integrity checking, AES-128 encryption                                 |
+
+Presently, Samba's version 3 empowers full Active Directory membership, while version 4 operates as an Active Directory domain controller. In the network environment, hosts in a workgroup collaborate, facilitated by the NetBIOS/WINS for naming and data exchange purposes.
+With version 4, Samba even provides an Active Directory domain controller. It contains several so-called daemons for this purpose - which are Unix background programs. The SMB server daemon (~smbd~) belonging to Samba provides the first two functionalities, while the NetBIOS message block daemon (~nmbd~) implements the last two functionalities. The SMB service controls these two background programs.
+
+We know that Samba is suitable for both Linux and Windows systems. In a network, each host participates in the same workgroup. A ~workgroup~ is a group name that identifies an arbitrary collection of computers and their resources on an SMB network. There can be multiple workgroups on the network at any given time. IBM developed an application ~programming interface~ (~API~) for networking computers called the ~Network Basic Input/Output System~ (~NetBIOS~).
+**** Default Configuration
+As we can imagine, Samba offers a wide range of settings that we can configure. Again, we define the settings via a text file where we can get an overview of some of the settings.
+#+BEGIN_SRC bash
+  cat /etc/samba/smb.conf | grep -v "#\|\;"
+  [global]
+     workgroup = DEV.INFREIGHT.LOCAL
+     server string = DEVSMB
+     log file = /var/log/samba/log.%m
+     max log size = 1000
+     logging = file
+     panic action = /usr/share/samba/panic-action %d
+
+     server role = standalone server
+     obey pam restrictions = yes
+     unix password sync = yes
+
+     passwd program = /usr/bin/passwd %u
+     passwd chat = *Enter\snew\s*\spassword:* %n\n *Retype\snew\s*\spassword:* %n\n *password\supdated\ssuccessfully* .
+
+     pam password change = yes
+     map to guest = bad user
+     usershare allow guests = yes
+
+  [printers]
+     comment = All Printers
+     browseable = no
+     path = /var/spool/samba
+     printable = yes
+     guest ok = no
+     read only = yes
+     create mask = 0700
+
+  [print$]
+     comment = Printer Drivers
+     path = /var/lib/samba/printers
+     browseable = yes
+     read only = yes
+     guest ok = no
+#+END_SRC
+
+We see global settings and two shares that are intended for printers. The global settings are the configuration of the available SMB server that is used for all shares.
+| Setting                      | Description                                                           |
+|------------------------------+-----------------------------------------------------------------------|
+| [sharename]                  | The name of the network share.                                        |
+| workgroup = WORKGROUP/DOMAIN | Workgroup that will appear when clients query.                        |
+| path = /path/here/             | The directory to which the user is to be given access.                |
+| server string = STRING       | The string that will show up when a connection is initiated.          |
+| unix password sync = yes     | Synchronize the UNIX password with the SMB password?                  |
+| usershare allow guests = yes | Allow non-authenticated users to access the defined share?            |
+| map to guest = bad user      | What to do when a user login request doesn't match a valid UNIX user? |
+| browseable = yes             | Should this share be shown in the list of available shares?           |
+| guest ok = yes               | Allow connecting to the service without using a password?             |
+| read only = yes              | Allow users to read files only?                                       |
+| create mask = 0700           | What permissions need to be set for newly created files?              |
+**** Dangerous Settings
+The settings outlined in the configuration hold sensitivity. For instance, enabling '~browseable = yes~' offers convenience to employees, allowing easy access and navigation through shared folders for organizational purposes. However, this convenience extends to potential attackers who, upon gaining access, can exploit this setting to explore sensitive contents, posing a security risk to the company's data. This dual nature of settings highlights the trade-off between user convenience and ~potential vulnerabilities~.
+| Setting                   | Description                                                         |
+|---------------------------+---------------------------------------------------------------------|
+| browseable = yes          | Allow listing available shares in the current share?                |
+| read only = no            | Forbid the creation and modification of files?                      |
+| writable = yes            | Allow users to create and modify files?                             |
+| guest ok = yes            | Allow connecting to the service without using a password?           |
+| enable privileges = yes   | Honor privileges assigned to specific SID?                          |
+| create mask = 0777        | What permissions must be assigned to the newly created files?       |
+| directory mask = 0777     | What permissions must be assigned to the newly created directories? |
+| logon script = script.sh  | Script to be executed on the user's login?                          |
+| magic script = script.sh  | Script to be executed when the session is closed?                   |
+| magic output = script.out | Location to store the output of the magic script?                   |
+**** Example Share
+In creating a share like ~[notes]~ and others, applying the settings as listed can significantly impact the enumeration process. Settings, commonly employed for testing purposes, might persist within internal subnets or small team environments in larger departments, inadvertently granting broad access. Failure to reset these settings leads to unintended consequences, allowing easy browsing, inspection, and potential download of shared data, posing a significant security risk.
+#+BEGIN_SRC bash
+  ...SNIP...
+
+  [notes]
+	  comment = CheckIT
+	  path = /mnt/notes/
+
+	  browseable = yes
+	  read only = no
+	  writable = yes
+	  guest ok = yes
+
+	  enable privileges = yes
+	  create mask = 0777
+	  directory mask = 0777
+#+END_SRC
+
+It is highly recommended to look at the man pages for Samba and configure it ourselves and experiment with the settings. We will then discover potential aspects that will be interesting for us as a penetration tester. In addition, the more familiar we become with the Samba server and SMB, the easier it will be to find our way around the environment and use it for our purposes. Once we have adjusted ~/etc/samba/smb.conf~ to our needs, we have to restart the service on the server.
+**** Restart Samba
+#+BEGIN_SRC bash
+  sudo systemctl restart smbd
+#+END_SRC
+**** SMBclient - Connecting to the Share
+#+BEGIN_SRC bash
+  smbclient -N -L //10.129.14.128
+
+	  Sharename       Type      Comment
+	  ---------       ----      -------
+	  print$          Disk      Printer Drivers
+	  home            Disk      INFREIGHT Samba
+	  dev             Disk      DEVenv
+	  notes           Disk      CheckIT
+	  IPC$            IPC       IPC Service (DEVSM)
+	SMB1 disabled -- no workgroup available
+#+END_SRC
+
+The Samba server now hosts five distinct shares, including the default '~print$~' and '~IPC$~' shares, established in the basic configuration. Focusing on the '~[notes]~' share, accessing and inspecting it through the client program allows for a closer examination. For those unfamiliar with the client program, leveraging the '~help~' command post-login reveals a comprehensive list of available commands, aiding navigation and execution within the share.
+#+BEGIN_SRC bash
+  smbclient //10.129.14.128/notes
+
+  Enter WORKGROUP\<username>'s password: 
+  Anonymous login successful
+  Try "help" to get a list of possible commands.
+
+
+  smb: \> help
+
+  ?              allinfo        altname        archive        backup         
+  blocksize      cancel         case_sensitive cd             chmod          
+  chown          close          del            deltree        dir            
+  du             echo           exit           get            getfacl        
+  geteas         hardlink       help           history        iosize         
+  lcd            link           lock           lowercase      ls             
+  l              mask           md             mget           mkdir          
+  more           mput           newer          notify         open           
+  posix          posix_encrypt  posix_open     posix_mkdir    posix_rmdir    
+  posix_unlink   posix_whoami   print          prompt         put            
+  pwd            q              queue          quit           readlink       
+  rd             recurse        reget          rename         reput          
+  rm             rmdir          showacls       setea          setmode        
+  scopy          stat           symlink        tar            tarmode        
+  timeout        translate      unlock         volume         vuid           
+  wdel           logon          listconnect    showconnect    tcon           
+  tdis           tid            utimes         logoff         ..             
+  !            
+
+
+  smb: \> ls
+
+    .                                   D        0  Wed Sep 22 18:17:51 2021
+    ..                                  D        0  Wed Sep 22 12:03:59 2021
+    prep-prod.txt                       N       71  Sun Sep 19 15:45:21 2021
+
+		  30313412 blocks of size 1024. 16480084 blocks available	
+#+END_SRC
+**** Download Files from SMB
+Once we have discovered interesting files or folders, we can download them using the ~get~ command. Smbclient also allows us to execute local system commands using an exclamation mark at the beginning (~!<cmd>~) without interrupting the connection.
+#+BEGIN_SRC bash
+  smb: \> get prep-prod.txt 
+
+  getting file \prep-prod.txt of size 71 as prep-prod.txt (8,7 KiloBytes/sec) 
+  (average 8,7 KiloBytes/sec)
+
+
+  smb: \> !ls
+
+  prep-prod.txt
+
+
+  smb: \> !cat prep-prod.txt
+
+  [] check your code with the templates
+  [] run code-assessment.py
+  [] …	
+#+END_SRC
+**** Samba Status
+From an administrative perspective, '~smbstatus~' offers insights into active connections within the Samba server, displaying details such as connected clients, their originating hosts, and the accessed shares. This information becomes crucial, especially when navigating subnets or isolated networks accessible to others.
+
+In domain-level security, the Samba server operates as part of a Windows domain, which typically includes at least one domain controller responsible for password authentication. The domain controller ensures secure authentication within the workgroup, managing user credentials in its ~Security Authentication Module~ (~SAM~). Upon user login and share access requests, these domain controllers authenticate users, enhancing security within the network.
+#+BEGIN_SRC bash
+  Samba version 4.11.6-Ubuntu
+  PID     Username     Group        Machine                                   Protocol Version  Encryption           Signing              
+  ----------------------------------------------------------------------------------------------------------------------------------------
+  75691   sambauser    samba        10.10.14.4 (ipv4:10.10.14.4:45564)      SMB3_11           -                    -                    
+
+  Service      pid     Machine       Connected at                     Encryption   Signing     
+  ---------------------------------------------------------------------------------------------
+  notes        75691   10.10.14.4   Do Sep 23 00:12:06 2021 CEST     -            -           
+
+  No locked files
+#+END_SRC
+*** Footprinting the Service
+**** Nmap
+#+BEGIN_SRC bash
+  sudo nmap 10.129.14.128 -sV -sC -p139,445
+
+  Starting Nmap 7.80 ( https://nmap.org ) at 2021-09-19 15:15 CEST
+  Nmap scan report for sharing.inlanefreight.htb (10.129.14.128)
+  Host is up (0.00024s latency).
+
+  PORT    STATE SERVICE     VERSION
+  139/tcp open  netbios-ssn Samba smbd 4.6.2
+  445/tcp open  netbios-ssn Samba smbd 4.6.2
+  MAC Address: 00:00:00:00:00:00 (VMware)
+
+  Host script results:
+  |_nbstat: NetBIOS name: HTB, NetBIOS user: <unknown>, NetBIOS MAC: <unknown> (unknown)
+  | smb2-security-mode: 
+  |   2.02: 
+  |_    Message signing enabled but not required
+  | smb2-time: 
+  |   date: 2021-09-19T13:16:04
+  |_  start_date: N/A
+
+  Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+  Nmap done: 1 IP address (1 host up) scanned in 11.35 seconds
+#+END_SRC
+**** RPCclient
+We can see from the results that it is not very much that Nmap provided us with here. Therefore, we should resort to other tools that allow us to interact manually with the SMB and send specific requests for the information. One of the handy tools for this is ~rpcclient~. This is a tool to perform MS-RPC functions.
+
+The [[https://www.geeksforgeeks.org/remote-procedure-call-rpc-in-operating-system/][Remote Procedure Call]] (~RPC~) is a concept and, therefore, also a central tool to realize operational and work-sharing structures in networks and client-server architectures. The communication process via RPC includes passing parameters and the return of a function value.
+#+BEGIN_SRC bash
+  rpcclient -U "" 10.129.14.128
+
+  Enter WORKGROUP\'s password:
+  rpcclient $> 
+#+END_SRC
+
+The ~rpcclient~ offers us many different requests with which we can execute specific functions on the SMB server to get information. A complete list of all these functions can be found on the man page of the rpcclient.
+| Query                   | Description                                                        |
+|-------------------------+--------------------------------------------------------------------|
+| srvinfo                 | Server information.                                                |
+| enumdomains             | Enumerate all domains deployed in the network.                     |
+| querydominfo            | Provides domain, server, and user information of deployed domains. |
+| netshareenumall         | Enumerates all available shares.                                   |
+| netsharegetinfo <share> | Provides information about a specific share.                       |
+| enumdomusers            | Enumerates all domain users.                                       |
+| queryuser <RID>         | Provides information about a specific user.                        |
+**** RPCclient - Enumeration
+#+BEGIN_SRC bash
+  rpcclient $> srvinfo
+
+	  DEVSMB         Wk Sv PrQ Unx NT SNT DEVSM
+	  platform_id     :       500
+	  os version      :       6.1
+	  server type     :       0x809a03
+		
+		
+  rpcclient $> enumdomains
+
+  name:[DEVSMB] idx:[0x0]
+  name:[Builtin] idx:[0x1]
+
+
+  rpcclient $> querydominfo
+
+  Domain:         DEVOPS
+  Server:         DEVSMB
+  Comment:        DEVSM
+  Total Users:    2
+  Total Groups:   0
+  Total Aliases:  0
+  Sequence No:    1632361158
+  Force Logoff:   -1
+  Domain Server State:    0x1
+  Server Role:    ROLE_DOMAIN_PDC
+  Unknown 3:      0x1
+
+
+  rpcclient $> netshareenumall
+
+  netname: print$
+	  remark: Printer Drivers
+	  path:   C:\var\lib\samba\printers
+	  password:
+  netname: home
+	  remark: INFREIGHT Samba
+	  path:   C:\home\
+	  password:
+  netname: dev
+	  remark: DEVenv
+	  path:   C:\home\sambauser\dev\
+	  password:
+  netname: notes
+	  remark: CheckIT
+	  path:   C:\mnt\notes\
+	  password:
+  netname: IPC$
+	  remark: IPC Service (DEVSM)
+	  path:   C:\tmp
+	  password:
+		
+		
+  rpcclient $> netsharegetinfo notes
+
+  netname: notes
+	  remark: CheckIT
+	  path:   C:\mnt\notes\
+	  password:
+	  type:   0x0
+	  perms:  0
+	  max_uses:       -1
+	  num_uses:       1
+  revision: 1
+  type: 0x8004: SEC_DESC_DACL_PRESENT SEC_DESC_SELF_RELATIVE 
+  DACL
+	  ACL     Num ACEs:       1       revision:       2
+	  ---
+	  ACE
+		  type: ACCESS ALLOWED (0) flags: 0x00 
+		  Specific bits: 0x1ff
+		  Permissions: 0x101f01ff: Generic all access SYNCHRONIZE_ACCESS WRITE_OWNER_ACCESS WRITE_DAC_ACCESS READ_CONTROL_ACCESS DELETE_ACCESS 
+		  SID: S-1-1-0
+#+END_SRC
+The examples provided highlight the potential information leakage to ~anonymous users~ within a network. Granting access to network services to anonymous users can inadvertently expose critical information or grant excessive permissions, posing a significant risk to the entire network's security.
+
+Anonymous access not only jeopardizes the network but also facilitates the discovery of other users, potentially leading to aggressive brute-force attacks. Human error, coupled with inadequate security awareness and lax password practices, often results in weak passwords vulnerable to easy cracking.
+**** Rpcclient - User Enumeration
+To illustrate user enumeration, the 'rpcclient' tool can be employed, showcasing how attackers could exploit vulnerabilities to enumerate users within the network.
+#+BEGIN_SRC bash
+  rpcclient $> enumdomusers
+
+  user:[mrb3n] rid:[0x3e8]
+  user:[cry0l1t3] rid:[0x3e9]
+
+
+  rpcclient $> queryuser 0x3e9
+
+	  User Name   :   cry0l1t3
+	  Full Name   :   cry0l1t3
+	  Home Drive  :   \\devsmb\cry0l1t3
+	  Dir Drive   :
+	  Profile Path:   \\devsmb\cry0l1t3\profile
+	  Logon Script:
+	  Description :
+	  Workstations:
+	  Comment     :
+	  Remote Dial :
+	  Logon Time               :      Do, 01 Jan 1970 01:00:00 CET
+	  Logoff Time              :      Mi, 06 Feb 2036 16:06:39 CET
+	  Kickoff Time             :      Mi, 06 Feb 2036 16:06:39 CET
+	  Password last set Time   :      Mi, 22 Sep 2021 17:50:56 CEST
+	  Password can change Time :      Mi, 22 Sep 2021 17:50:56 CEST
+	  Password must change Time:      Do, 14 Sep 30828 04:48:05 CEST
+	  unknown_2[0..31]...
+	  user_rid :      0x3e9
+	  group_rid:      0x201
+	  acb_info :      0x00000014
+	  fields_present: 0x00ffffff
+	  logon_divs:     168
+	  bad_password_count:     0x00000000
+	  logon_count:    0x00000000
+	  padding1[0..7]...
+	  logon_hrs[0..21]...
+
+
+  rpcclient $> queryuser 0x3e8
+
+	  User Name   :   mrb3n
+	  Full Name   :
+	  Home Drive  :   \\devsmb\mrb3n
+	  Dir Drive   :
+	  Profile Path:   \\devsmb\mrb3n\profile
+	  Logon Script:
+	  Description :
+	  Workstations:
+	  Comment     :
+	  Remote Dial :
+	  Logon Time               :      Do, 01 Jan 1970 01:00:00 CET
+	  Logoff Time              :      Mi, 06 Feb 2036 16:06:39 CET
+	  Kickoff Time             :      Mi, 06 Feb 2036 16:06:39 CET
+	  Password last set Time   :      Mi, 22 Sep 2021 17:47:59 CEST
+	  Password can change Time :      Mi, 22 Sep 2021 17:47:59 CEST
+	  Password must change Time:      Do, 14 Sep 30828 04:48:05 CEST
+	  unknown_2[0..31]...
+	  user_rid :      0x3e8
+	  group_rid:      0x201
+	  acb_info :      0x00000010
+	  fields_present: 0x00ffffff
+	  logon_divs:     168
+	  bad_password_count:     0x00000000
+	  logon_count:    0x00000000
+	  padding1[0..7]...
+	  logon_hrs[0..21]...
+#+END_SRC
+**** Rpcclient - Group Information
+We can then use the results to identify the group's RID, which we can then use to retrieve information from the entire group.
+#+BEGIN_SRC bash
+  rpcclient $> querygroup 0x201
+
+	  Group Name:     None
+	  Description:    Ordinary Users
+	  Group Attribute:7
+	  Num Members:2
+#+END_SRC
+**** Brute Forcing User RIDs
+#+BEGIN_SRC bash
+  for i in $(seq 500 1100);do rpcclient -N -U "" 10.129.14.128 -c "queryuser 0x$(printf '%x\n' $i)" | grep "User Name\|user_rid\|group_rid" && echo "";done
+
+	  User Name   :   sambauser
+	  user_rid :      0x1f5
+	  group_rid:      0x201
+		
+	  User Name   :   mrb3n
+	  user_rid :      0x3e8
+	  group_rid:      0x201
+		
+	  User Name   :   cry0l1t3
+	  user_rid :      0x3e9
+	  group_rid:      0x201
+#+END_SRC
+**** Impacket - Samrdump.py
+An alternative to this would be a Python script from [[https://github.com/SecureAuthCorp/impacket][Impacket]] called [[https://github.com/SecureAuthCorp/impacket/blob/master/examples/samrdump.py][samrdump.py]].
+#+BEGIN_SRC bash
+  samrdump.py 10.129.14.128
+
+  Impacket v0.9.22 - Copyright 2020 SecureAuth Corporation
+
+  [*] Retrieving endpoint list from 10.129.14.128
+  Found domain(s):
+   . DEVSMB
+   . Builtin
+  [*] Looking up users in domain DEVSMB
+  Found user: mrb3n, uid = 1000
+  Found user: cry0l1t3, uid = 1001
+  mrb3n (1000)/FullName: 
+  mrb3n (1000)/UserComment: 
+  mrb3n (1000)/PrimaryGroupId: 513
+  mrb3n (1000)/BadPasswordCount: 0
+  mrb3n (1000)/LogonCount: 0
+  mrb3n (1000)/PasswordLastSet: 2021-09-22 17:47:59
+  mrb3n (1000)/PasswordDoesNotExpire: False
+  mrb3n (1000)/AccountIsDisabled: False
+  mrb3n (1000)/ScriptPath: 
+  cry0l1t3 (1001)/FullName: cry0l1t3
+  cry0l1t3 (1001)/UserComment: 
+  cry0l1t3 (1001)/PrimaryGroupId: 513
+  cry0l1t3 (1001)/BadPasswordCount: 0
+  cry0l1t3 (1001)/LogonCount: 0
+  cry0l1t3 (1001)/PasswordLastSet: 2021-09-22 17:50:56
+  cry0l1t3 (1001)/PasswordDoesNotExpire: False
+  cry0l1t3 (1001)/AccountIsDisabled: False
+  cry0l1t3 (1001)/ScriptPath: 
+  [*] Received 2 entries.
+#+END_SRC
+
+The information we have already obtained with ~rpcclient~ can also be obtained using other tools. For example, the [[https://github.com/ShawnDEvans/smbmap][SMBMap]] and [[https://github.com/byt3bl33d3r/CrackMapExec][CrackMapExec]] tools are also widely used and helpful for the enumeration of SMB services.
+**** SMBmap
+#+BEGIN_SRC bash
+  smbmap -H 10.129.14.128
+
+  [+] Finding open SMB ports....
+  [+] User SMB session established on 10.129.14.128...
+  [+] IP: 10.129.14.128:445       Name: 10.129.14.128                                     
+	  Disk                                                    Permissions     Comment
+	  ----                                                    -----------     -------
+	  print$                                                  NO ACCESS       Printer Drivers
+	  home                                                    NO ACCESS       INFREIGHT Samba
+	  dev                                                     NO ACCESS       DEVenv
+	  notes                                                   NO ACCESS       CheckIT
+	  IPC$                                                    NO ACCESS       IPC Service (DEVSM)
+#+END_SRC
+**** CrackMapExec
+#+BEGIN_SRC bash
+  crackmapexec smb 10.129.14.128 --shares -u '' -p ''
+
+  SMB         10.129.14.128   445    DEVSMB           [*] Windows 6.1 Build 0 (name:DEVSMB) (domain:) (signing:False) (SMBv1:False)
+  SMB         10.129.14.128   445    DEVSMB           [+] \: 
+  SMB         10.129.14.128   445    DEVSMB           [+] Enumerated shares
+  SMB         10.129.14.128   445    DEVSMB           Share           Permissions     Remark
+  SMB         10.129.14.128   445    DEVSMB           -----           -----------     ------
+  SMB         10.129.14.128   445    DEVSMB           print$                          Printer Drivers
+  SMB         10.129.14.128   445    DEVSMB           home                            INFREIGHT Samba
+  SMB         10.129.14.128   445    DEVSMB           dev                             DEVenv
+  SMB         10.129.14.128   445    DEVSMB           notes           READ,WRITE      CheckIT
+  SMB         10.129.14.128   445    DEVSMB           IPC$                            IPC Service (DEVSM)
+#+END_SRC
+**** enum4linux
+Another tool worth mentioning is the so-called [[https://github.com/cddmp/enum4linux-ng][enum4linux-ng]], which is based on an older tool, enum4linux. This tool automates many of the queries, but not all, and can return a large amount of information.
+***** Install
+#+BEGIN_SRC bash
+  git clone https://github.com/cddmp/enum4linux-ng.git
+  cd enum4linux-ng
+  pip3 install -r requirements.txt
+#+END_SRC
+***** Enumeration
+#+BEGIN_SRC bash
+  ./enum4linux-ng.py 10.179.114.128 -A
+#+END_SRC
+** NFS\111,2049
+~Network File System~ (~NFS~) is a network file system developed by Sun Microsystems and has the same purpose as *SMB*. Its purpose is to access file systems over a network as if they were local. 
+NFS is used between Linux and Unix systems. This means that NFS clients cannot communicate directly with SMB servers.
+
+| Version | Features                                                                                                                                                                                                                                                         |
+|---------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| NFSv2   | Older version widely supported by many systems; originally operated solely over UDP.                                                                                                                                                                             |
+| NFSv3   | Offers additional features like variable file size, improved error reporting, but lacks full compatibility with NFSv2 clients.                                                                                                                                   |
+| NFSv4   | Introduces Kerberos authentication, functions efficiently across firewalls and the internet, eliminates portmappers, supports ACLs, applies state-based operations, enhances performance, and prioritizes high security. First version with a stateful protocol. |
+
+A significant advantage of ~NFSv4~ over its predecessors is that only one UDP or TCP port ~2049~ is used to run the service, which simplifies the use of the protocol _across firewalls_.
+NFS is based on the Open Network Computing Remote Procedure Call (~ONC-RPC~ / ~SUN-RPC~) protocol exposed on ~TCP~ and ~UDP~ ports ~111~, which uses External Data Representation (~XDR~) for the system-independent exchange of data. The NFS protocol has no mechanism for ~authentication~ or ~authorization~.
+The most common authentication is via UNIX  ~UID~ / ~GID~ and ~group memberships~, which is why this syntax is most likely to be applied to the NFS protocol.
+*** Default Configuration
+The configuration are provided into ~/etc/exports~, the file is like:
+#+BEGIN_SRC bash
+  # /etc/exports: the access control list for filesystems which may be exported
+  #               to NFS clients.  See exports(5).
+  #
+  # Example for NFSv2 and NFSv3:
+  # /srv/homes       hostname1(rw,sync,no_subtree_check) hostname2(ro,sync,no_subtree_check)
+  #
+  # Example for NFSv4:
+  # /srv/nfs4        gss/krb5i(rw,sync,fsid=0,crossmnt,no_subtree_check)
+  # /srv/nfs4/homes  gss/krb5i(rw,sync,no_subtree_check)
+#+END_SRC
+
+Some possible ~configuration~:
+| Option           | Description                                                                                               |
+|------------------+-----------------------------------------------------------------------------------------------------------|
+| rw               | Read and write permissions.                                                                               |
+| ro               | Read-only permissions.                                                                                    |
+| sync             | Synchronous data transfer, albeit slightly slower.                                                        |
+| async            | Asynchronous data transfer, offering slightly faster speeds.                                              |
+| secure           | Restricts the use of ports above 1024.                                                                    |
+| insecure         | Allows the use of ports above 1024.                                                                       |
+| no_subtree_check | Disables the checking of subdirectory trees, potentially enhancing performance.                           |
+| root_squash      | Maps all permissions from root UID/GID 0 to the UID/GID of anonymous, securing root access on NFS mounts. |
+**** ExportFS
+#+BEGIN_SRC bash
+  echo '/mnt/nfs  10.129.14.0/24(sync,no_subtree_check)' >> /etc/exports
+  systemctl restart nfs-kernel-server
+  exportfs
+#+END_SRC
+
+We have shared the folder ~/mnt/nfs~ to the subnet ~10.129.14.0/24~ with the setting shown above
+**** Dangerous Settings
+Here are some of them listed:
+| Option         | Description                                                                                                      |
+|----------------+------------------------------------------------------------------------------------------------------------------|
+| rw             | Grants both read and write permissions.                                                                          |
+| insecure       | Permits the utilization of ports above 1024 for NFS operations.                                                  |
+| nohide         | Ensures that if another filesystem is mounted below an exported directory, it gets its own exports entry.        |
+| no_root_squash | Retains files created by root with the UID/GID 0, bypassing the usual mapping to anonymous UID/GID for security. |
+
+We can take a look at the insecure option. This is dangerous because users can use ports above 1024. The first 1024 ports can only be used by root. This prevents the fact that no users can use sockets above port 1024 for the NFS service and interact with it.
+*** Footprinting the Service
+**** Nmap
+#+BEGIN_SRC bash
+  sudo nmap 10.129.14.128 -p111,2049 -sV -sC
+#+END_SRC
+
+The ~rpcinfo~ NSE script retrieves a list of all currently running RPC services, their names and descriptions, and the ports they use.
+#+BEGIN_SRC bash
+  sudo nmap --script nfs* 10.129.14.128 -sV -p111,2049
+#+END_SRC
+**** Show Available NFS Shares
+#+BEGIN_SRC bash
+  showmount -e 10.129.14.128
+#+END_SRC
+**** Mounting NFS Share
+#+BEGIN_SRC bash
+  mkdir target-NFS
+  sudo mount -t nfs 10.129.14.128:/ ./target-NFS/ -o nolock
+  cd target-NFS
+  treee .
+#+END_SRC
+**** List Contents with Usernames & Group Names
+#+BEGIN_SRC bash
+  ls -l mnt/nfs/
+#+END_SRC
+**** List Contents with UIDs & GUIDs
+#+BEGIN_SRC bash
+  ls -n mnt/nfs/
+#+END_SRC
+**** Unmounting
+#+BEGIN_SRC bash
+  cd ..
+  sudo umount ./target-NFS
+#+END_SRC
+** DNS\53(UDP)
+~DNS~, an integral part of the Internet, facilitates access to web servers via ~domain names~ like bard.google.com or www.google.com, mapping them to ~specific IP~ addresses provided by hosting providers. It operates as a ~system converting computer names~ into IP addresses without a central database, resembling a vast library housing various phone books. This information disperses across thousands of name servers globally. _These distributed DNS servers translate domain names to IP addresses_, directing users to specific servers associated with a domain. Various types of DNS servers are employed worldwide to manage this functionality.
+| Server Type                  | Description                                                                                                                                                                                                                                |
+|------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| DNS Root Server              | Responsible for top-level domains (TLDs), queried if a name server fails to respond. They act as a central interface between users and internet content, linking domains and IP addresses. ICANN coordinates the 13 root servers globally. |
+| Authoritative Nameserver     | Holds authority for specific zones, responding only to queries within its responsibility. The information they provide is considered definitive. If such a server can't answer, the root name server steps in.                             |
+| Non-authoritative Nameserver | Not accountable for a particular DNS zone but gathers information about specific zones through recursive or iterative DNS queries.                                                                                                         |
+| Caching DNS Server           | Stores information from other name servers for a set duration, determined by the authoritative name server. These servers hold cached data.                                                                                                |
+| Forwarding Server            | Solely responsible for forwarding DNS queries to other DNS servers, handling only query redirection.                                                                                                                                       |
+| Resolver                     | Not authoritative but performs local name resolution on computers or routers. Resolvers aid in converting domain names to IP addresses without maintaining their own zone information.                                                     |
+
+DNS is mainly unencrypted. Devices on the local WLAN and Internet providers can therefore hack in and spy on DNS queries. Since this poses a privacy risk, there are now some solutions for DNS encryption. By default, IT security professionals apply ~DNS over TLS~ (~DoT~) or ~DNS over HTTPS~ (~DoH~) here. In addition, the network protocol ~DNSCrypt~ also encrypts the traffic between the computer and the name server.
+
+Different ~DNS records~ are used for the DNS queries, which all have various tasks. Moreover, separate entries exist for different functions since we can set up mail servers and other servers for a domain.
+| DNS Record | Description                                                                                                                                                                                                                        |
+|------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| A          | Returns the IPv4 address of the requested domain.                                                                                                                                                                                  |
+| AAAA       | Returns the IPv6 address of the requested domain.                                                                                                                                                                                  |
+| MX         | Identifies responsible mail servers for the domain.                                                                                                                                                                                |
+| NS         | Specifies the domain's DNS servers (nameservers).                                                                                                                                                                                  |
+| TXT        | Versatile record containing various information. It's used for purposes like Google Search Console validation, SSL certificate validation, SPF and DMARC entries for mail traffic validation, and protection from spam.            |
+| CNAME      | Serves as an alias, pointing one domain to the same location as another. For instance, if www.hackthebox.eu should direct to the same IP as hackthebox.eu, an A record is set for one and a CNAME record is created for the other. |
+| PTR        | Performs reverse lookup, translating IP addresses into valid domain names.                                                                                                                                                         |
+| SOA        | Provides information about the corresponding DNS zone and the administrative contact's email address. It signifies the start of a zone of authority and contains essential information about the zone's management.                |
+*** Default Configuration
+There are many different configuration types for DNS.
+All DNS servers work with three different types of hierarchical configuration files:
+1. ~local~ DNS configuration files
+2. ~zone~ files
+3. ~reverse~ name resolution files
+
+The DNS server [[https://www.isc.org/bind/][Bind9]] is very often used on Linux-based distributions. Its local configuration file (named.conf) is roughly divided into two sections, firstly the options section for general settings and secondly the zone entries for the individual domains. The local configuration files are usually:
+- named.conf.local
+- named.conf.options
+- named.conf.log
+
+The configuration file ~named.conf~ is divided into several options that control the behavior of the name server. A distinction is made between ~global options~ and ~zone options~.
+**** Local DNS Configuration
+#+BEGIN_SRC bash
+  cat /etc/bind/named.conf.local
+
+  //
+  // Do any local configuration here
+  //
+
+  // Consider adding the 1918 zones here, if they are not used in your
+  // organization
+  //include "/etc/bind/zones.rfc1918";
+  zone "domain.com" {
+      type master;
+      file "/etc/bind/db.domain.com";
+      allow-update { key rndc-key; };
+  };
+#+END_SRC
+**** Zone Files
+Zone files define individual DNS zones and are usually dedicated to one domain, except for ISP and public DNS servers. They utilize the BIND file format, a standard in DNS server software. These text files include essential records like ~SOA~ and ~NS~, ensuring completeness and accuracy. Any syntax error renders the entire file unusable, causing DNS queries for that zone to receive a SERVFAIL error. Essentially, zone files function as a structured phone book for DNS servers, detailing domain-to-IP address mappings following BIND format rules.
+#+BEGIN_SRC bash
+  cat /etc/bind/db.domain.com
+
+  ;
+  ; BIND reverse data file for local loopback interface
+  ;
+  $ORIGIN domain.com
+  $TTL 86400
+  @     IN     SOA    dns1.domain.com.     hostmaster.domain.com. (
+		      2001062501 ; serial
+		      21600      ; refresh after 6 hours
+		      3600       ; retry after 1 hour
+		      604800     ; expire after 1 week
+		      86400 )    ; minimum TTL of 1 day
+
+	IN     NS     ns1.domain.com.
+	IN     NS     ns2.domain.com.
+
+	IN     MX     10     mx.domain.com.
+	IN     MX     20     mx2.domain.com.
+
+	       IN     A       10.129.14.5
+
+  server1      IN     A       10.129.14.5
+  server2      IN     A       10.129.14.7
+  ns1          IN     A       10.129.14.2
+  ns2          IN     A       10.129.14.3
+
+  ftp          IN     CNAME   server1
+  mx           IN     CNAME   server1
+  mx2          IN     CNAME   server2
+  www          IN     CNAME   server2
+#+END_SRC
+**** Reverse Name Resolution Zone Files
+Indeed, for a ~Fully Qualified Domain Name~ (~FQDN~) to resolve to an IP address, the DNS server requires a reverse lookup file. This file utilizes ~PTR~ (Pointer) records to map the computer name (FQDN) to the last octet of an IP address, correlating it with the respective host. PTR records play a crucial role in the reverse translation of IP addresses into corresponding names, as highlighted in the table previously mentioned.
+#+BEGIN_SRC bash
+  cat /etc/bind/db.10.129.14
+
+  ;
+  ; BIND reverse data file for local loopback interface
+  ;
+  $ORIGIN 14.129.10.in-addr.arpa
+  $TTL 86400
+  @     IN     SOA    dns1.domain.com.     hostmaster.domain.com. (
+		      2001062501 ; serial
+		      21600      ; refresh after 6 hours
+		      3600       ; retry after 1 hour
+		      604800     ; expire after 1 week
+		      86400 )    ; minimum TTL of 1 day
+
+	IN     NS     ns1.domain.com.
+	IN     NS     ns2.domain.com.
+
+  5    IN     PTR    server1.domain.com.
+  7    IN     MX     mx.domain.com.
+  ...SNIP...
+#+END_SRC
+*** Dangerous Settings
+DNS servers face various ~vulnerabilities~ that attackers exploit. Vulnerabilities targeting BIND9, for instance, are documented on ~CVEdetails~. SecurityTrails also outlines popular attacks on DNS servers.
+
+~Certain configurations~ contribute to these vulnerabilities. DNS, being complex, is prone to errors, compelling administrators to implement temporary workarounds until an exact solution is found. Often, functionality takes precedence over security, prompting the release of elements to ensure parts of the infrastructure function as intended. This prioritization sometimes leads to misconfigurations and vulnerabilities within the system.
+| Option          | Description                                                              |
+|-----------------+--------------------------------------------------------------------------|
+| allow-query     | Specifies hosts permitted to send requests to the DNS server.            |
+| allow-recursion | Specifies hosts permitted to send recursive requests to the DNS server.  |
+| allow-transfer  | Specifies hosts permitted to receive zone transfers from the DNS server. |
+| zone-statistics | Gathers statistical data related to zones managed by the DNS server.     |
+*** Footprinting the Service
+Footprinting DNS servers involves querying them to gather information about other name servers known to them. This is typically done using the ~NS~ (Name Server) record and specifying the DNS server to be queried using the "~@~" character. By doing so, one can identify additional DNS servers and query their records. However, these other servers might have distinct configurations and can be permanent for different zones.
+**** Querying Name Servers (NS Records)
+Retrieves the ~NS~ records for the domain "example.com", showcasing the authoritative name servers responsible for the domain.
+#+BEGIN_SRC bash
+  nslookup -type=NS example.com
+#+END_SRC
+ 
+#+BEGIN_SRC bash
+  dig ns example.com @10.129.14.128
+#+END_SRC
+**** DIG - Version Query
+#+BEGIN_SRC bash
+  dig CH TXT version.bind 10.129.120.85
+#+END_SRC
+**** Querying ANY
+We can use the option ~ANY~ to view all available records. 
+#+BEGIN_SRC bash
+  dig any example.com @10.129.14.128
+#+END_SRC
+**** Querying A Records
+Fetches the IPv4 address (~A record~) associated with the domain "example.com".
+#+BEGIN_SRC bash
+  nslookup example.com
+#+END_SRC
+**** Querying MX Records
+Retrieves the Mail Exchange (~MX~) records for the domain "example.com", specifying mail servers responsible for email delivery.
+#+BEGIN_SRC bash
+  nslookup -type=MX example.com
+#+END_SRC
+**** Querying TXT Records
+Fetches the text records associated with the domain "example.com", commonly used for various purposes like ~SPF~, ~DMARC~, and ~verification purposes~
+#+BEGIN_SRC bash
+  nslookup -type=TXT example.com
+#+END_SRC
+**** Reverse DNS Lookup (PTR Records)
+Performs a reverse ~DNS lookup~ to find the domain associated with the given IP address.
+#+BEGIN_SRC bash
+  nslookup <IP address>
+#+END_SRC
+**** Querying AXFR Zone Transfer
+~Zone transfer~ in DNS involves transferring zones from one server to another, commonly occurring over ~TCP~ port ~53~ through ~Asynchronous Full Transfer Zone~ (~AXFR~). Given the criticality of DNS for businesses, maintaining identical zone files across multiple name servers is crucial. Changes made in one server's zone must be synchronized across all servers to ensure data consistency, achieved through zone transfer.
+
+The primary name server holds the ~original zone data~, while secondary servers are installed for ~increased reliability~, ~load distribution~, or ~primary server protection~. Top-Level Domains (TLDs) often mandate multiple servers for Second Level Domains' zone files.
+
+Entries in DNS are typically managed on the primary server, either through manual edits or automated dynamic updates from a database. Servers directly providing zone file synchronization are termed masters, while those obtaining data from masters are termed slaves. A primary server functions solely as a master, while a secondary server can serve as both a slave and a master.
+
+Slaves periodically fetch the ~SOA~ (~Start of Authority~) record from the master, comparing serial numbers at refresh intervals (*typically one hour*). A higher serial number on the master's SOA indicates mismatched data sets between servers.
+#+BEGIN_SRC bash
+  dig axfr example.com @10.129.14.128
+#+END_SRC
+***** AXFR Zone Transfer - Internal
+If the administrator used a subnet for the ~allow-transfer~ option for testing purposes or as a workaround solution or set it to any, everyone would query the entire zone file at the DNS server. In addition, other zones can be queried, which may even show internal IP addresses and hostnames.
+#+BEGIN_SRC bash
+  dig axfr internal.example.com @10.129.14.128
+#+END_SRC
+**** Subdomain Brute Forcing
+The individual A records with the hostnames can also be found out with the help of a brute-force attack.
+#+BEGIN_SRC bash
+  for sub in $(cat /opt/useful/SecLists/Discovery/DNS/subdomains-top1million-110000.txt);do dig $sub.example.com @10.129.14.128 | grep -v ';\|SOA' | sed -r '/^\s*$/d' | grep $sub | tee -a subdomains.txt;done
+#+END_SRC
+
+Many different tools can be used for this, and most of them work in the same way. One of these tools is, for example [[https://github.com/fwaeytens/dnsenum][DNSenum]].
+#+BEGIN_SRC bash
+  dnsenum --dnsserver 10.129.14.128 --enum -p 0 -s 0 -o subdomains.txt -f /opt/useful/SecLists/Discovery/DNS/subdomains-top1million-110000.txt example.com
+#+END_SRC
+** SMTP\25,587
+~SMTP~, the ~Simple Mail Transfer Protocol~, is pivotal for email transmission in IP networks. It operates between email clients and outgoing mail servers or between SMTP servers themselves. Often used alongside ~IMAP~ or ~POP3~ for managing emails, SMTP follows a client-server structure, allowing server-to-server communication where servers act as clients.
+
+Typically, SMTP servers accept connections on ~port 25~, but newer iterations also utilize TCP ~port 587~ for secure mail receipt. Port 587 ensures *secure communication by encrypting connections* with the ~STARTTLS~ command, safeguarding authentication data from being transmitted in plaintext. Authentication happens during connection initiation when clients confirm identity via a ~username~ and ~password~, enabling email transmission by sharing sender and recipient addresses, content, and parameters. Following transmission, the server forwards the email to another SMTP server.
+
+While SMTP primarily operates unencrypted, SSL/TLS encryption secures data from unauthorized access. Some servers opt for alternative ports like TCP 465 for encrypted SMTP connections.
+
+An integral function of SMTP servers is ~spam prevention~, often achieved through authentication mechanisms like ESMTP with SMTP-Auth, allowing only authorized users to send emails. The SMTP client (~Mail User Agent~ - ~MUA~) submits emails to the SMTP server (~Mail Transfer Agent~ - ~MTA~), scrutinized for size and spam before storage. Occasionally, a Mail Submission Agent (~MSA~) or Relay server precedes the ~MTA~, checking email validity.
+
+Upon reaching the destination SMTP server, data packets assemble into complete emails, forwarded to the Mail Delivery Agent (MDA), and delivered to the recipient's mailbox, accessed through POP3 or IMAP protocols. The journey typically involves.
+Client (~MUA~) ➞ Submission Agent (~MSA~) ➞ Open Relay (~MTA~) ➞ Mail Delivery Agent (~MDA~) ➞ Mailbox (~POP3/IMAP~).
+
+SMTP, while vital for email transmission, presents inherent drawbacks in its network protocol.
+- One primary limitation is the absence of a reliable delivery confirmation when sending emails through SMTP. Though the protocol allows for such notifications, it lacks standardized formatting. Typically, only an English-language error message, accompanied by the undelivered message's header, is returned, making confirmation unusable.
+- Moreover, SMTP ~doesn't authenticate~ users during connection establishment, leading to sender unreliability. This loophole is exploited through open ~SMTP relays~, commonly abused for mass spam distribution. Perpetrators utilize arbitrary fake sender addresses to avoid tracing (~mail spoofing~). To counter such misuse, various security techniques have been adopted. Suspicious emails are either rejected or directed to quarantine (~spam folder~). Security protocols like ~DomainKeys~ (~DKIM~) and ~Sender Policy Framework~ (~SPF~) play key roles in addressing these issues. ~DKIM~ verifies email authenticity *by adding digital signatures*, while ~SPF~ defines email sender legitimacy *by validating sender IP addresses* against domain records.
+
+These security measures aim to mitigate email abuse and improve SMTP's reliability and authenticity, enhancing the overall integrity and trustworthiness of email communication.
+*** Default Configuration
+Each SMTP server can be configured in many ways, as can all other services. However, there are differences because the SMTP server is only responsible for sending and forwarding emails.
+#+BEGIN_SRC bash
+  cat /etc/postfix/main.cf | grep -v "#" | sed -r "/^\s*$/d"
+
+  smtpd_banner = ESMTP Server 
+  biff = no
+  append_dot_mydomain = no
+  readme_directory = no
+  compatibility_level = 2
+  smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+  myhostname = mail1.example.com
+  alias_maps = hash:/etc/aliases
+  alias_database = hash:/etc/aliases
+  smtp_generic_maps = hash:/etc/postfix/generic
+  mydestination = $myhostname, localhost 
+  masquerade_domains = $myhostname
+  mynetworks = 127.0.0.0/8 10.129.0.0/16
+  mailbox_size_limit = 0
+  recipient_delimiter = +
+  smtp_bind_address = 0.0.0.0
+  inet_protocols = ipv4
+  smtpd_helo_restrictions = reject_invalid_hostname
+  home_mailbox = /home/postfix
+#+END_SRC
+
+| Command    | Description                                                                |
+|------------+----------------------------------------------------------------------------|
+| AUTH PLAIN | Service extension for client authentication.                               |
+| HELO       | Client initiates session by logging in with its computer name.             |
+| MAIL FROM  | Client specifies the email sender.                                         |
+| RCPT TO    | Client specifies the email recipient.                                      |
+| DATA       | Client initiates email transmission.                                       |
+| RSET       | Client aborts initiated transmission while maintaining the connection.     |
+| VRFY       | Client checks for mailbox availability for message transfer.               |
+| EXPN       | Client checks for mailbox availability for messaging using this command.   |
+| NOOP       | Client requests a server response to prevent disconnection due to timeout. |
+| QUIT       | Client terminates the session.                                             |
+*** Telnet - HELO/EHLO
+To interact with the SMTP server, we can use the ~telnet~ tool to initialize a TCP connection with the SMTP server. The actual initialization of the session is done with the command mentioned above, ~HELO~ or ~EHLO~.
+#+BEGIN_SRC bash
+  telnet 10.129.14.128 25
+
+  Trying 10.129.14.128...
+  Connected to 10.129.14.128.
+  Escape character is '^]'.
+  220 ESMTP Server 
+
+
+  HELO mail1.example.com
+
+  250 mail1.example.com
+
+
+  EHLO mail1
+
+  250-mail1.inlanefreight.htb
+  250-PIPELINING
+  250-SIZE 10240000
+  250-ETRN
+  250-ENHANCEDSTATUSCODES
+  250-8BITMIME
+  250-DSN
+  250-SMTPUTF8
+  250 CHUNKING
+#+END_SRC
+*** Telnet - VRFY
+The command ~VRFY~ can be used to enumerate existing users on the system. However, this does not always work. Depending on how the SMTP server is configured, the SMTP server may issue ~code 252~ and confirm the existence of a user that does not exist on the system. A list of all SMTP response codes can be found here.
+#+BEGIN_SRC bash
+  telnet 10.129.14.128 25
+
+  Trying 10.129.14.128...
+  Connected to 10.129.14.128.
+  Escape character is '^]'.
+  220 ESMTP Server 
+
+  VRFY root
+
+  252 2.0.0 root
+
+
+  VRFY cry0l1t3
+
+  252 2.0.0 cry0l1t3
+
+
+  VRFY testuser
+
+  252 2.0.0 testuser
+
+
+  VRFY aaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+  252 2.0.0 aaaaaaaaaaaaaaaaaaaaaaaaaaaa
+#+END_SRC
+*** Send an Email
+#+BEGIN_SRC bash bash
+  telnet 10.129.14.128 25
+
+  Trying 10.129.14.128...
+  Connected to 10.129.14.128.
+  Escape character is '^]'.
+  220 ESMTP Server
+
+
+  EHLO example.com
+
+  250-mail1.example.com
+  250-PIPELINING
+  250-SIZE 10240000
+  250-ETRN
+  250-ENHANCEDSTATUSCODES
+  250-8BITMIME
+  250-DSN
+  250-SMTPUTF8
+  250 CHUNKING
+
+
+  MAIL FROM: <cry0l1t3@exmple.com>
+
+  250 2.1.0 Ok
+
+
+  RCPT TO: <mrb3n@example.com> NOTIFY=success,failure
+
+  250 2.1.5 Ok
+
+
+  DATA
+
+  354 End data with <CR><LF>.<CR><LF>
+
+  From: <cry0l1t3@example.com>
+  To: <mrb3n@inlanefreight.htb>
+  Subject: DB
+  Date: Tue, 28 Sept 2021 16:32:51 +0200
+  Hey man, I am trying to access our XY-DB but the creds don't work. 
+  Did you make any changes there?
+  .
+
+  250 2.0.0 Ok: queued as 6E1CF1681AB
+
+
+  QUIT
+
+  221 2.0.0 Bye
+  Connection closed by foreign host.	
+#+END_SRC
+*** Dangerous Settings
+Using trusted relay servers prevents email filtering, but misconfigurations due to broad IP allowances pose security risks.
+#+BEGIN_SRC bash
+  mynetworks = 0.0.0.0/0
+#+END_SRC
+*** Footprinting the Service
+**** Nmap
+#+BEGIN_SRC bash
+  sudo nmap 10.129.14.128 -sC -sV -p25
+#+END_SRC
+**** Nmap - Open Relay
+#+BEGIN_SRC bash
+  sudo nmap 10.129.14.128 -p25 --script smtp-open-relay -v
+#+END_SRC
+** IMAP / POP3\110,143,993,995
+~Internet Message Access Protocol~ (~MAP~) enables remote email management with folder structures, unlike ~Post Office Protocol~ (~POP3~), facilitating online access to emails directly on the server. It supports synchronization across multiple clients, offering advanced functionalities like hierarchical mailboxes and access to multiple mailboxes within a session. With IMAP, emails remain on the server until deletion, ensuring a uniform database across clients. POP3, on the other hand, does not have the same functionality as IMAP, and it only provides listing, retrieving, and deleting emails as functions at the email server. 
+
+Clients access and create local copies of email structures, ensuring consistency across several devices. IMAP operates via port 143, using text-based ASCII commands for communication, and requires user authentication upon connection establishment. ~SMTP~ complements ~IMAP~ for email transmission and offers accessibility to sent emails across multiple devices by copying them into IMAP folders.
+
+However, IMAP typically operates unencrypted, transmitting data in plaintext. To bolster security, email servers often require ~encrypted~ IMAP sessions ~using SSL/TLS~, enhancing email traffic security and preventing unauthorized mailbox access. This encrypted connection usually utilizes standard port 143 or an alternative like ~993~, depending on the implementation.
+*** Default Configuration
+Exploring detailed configurations of ~IMAP~ and ~POP3~ protocols is intricate due to their numerous options.
+#+BEGIN_SRC text
+  I recommend creating a VM locally and install the two packages dovecot-imapd, and dovecot-pop3d using apt and play around with the configurations and experiment.
+#+END_SRC
+
+In the documentation of Dovecot, we can find the individual [[https://doc.dovecot.org/settings/core/][core]] settings and [[https://doc.dovecot.org/configuration_manual/service_configuration/][service]] configuration options that can be utilized for our experiments.
+*** IMAP Commands
+| Command                       | Description                                              |
+|-------------------------------+----------------------------------------------------------|
+| 1 LOGIN username password     | User's login.                                            |
+| 1 LIST "" *                   | Lists all directories.                                   |
+| 1 CREATE "INBOX"              | Creates a mailbox with a specified name.                 |
+| 1 DELETE "INBOX"              | Deletes a mailbox.                                       |
+| 1 RENAME "ToRead" "Important" | Renames a mailbox.                                       |
+| 1 LSUB "" *                   | Returns a subset of active or subscribed names.          |
+| 1 SELECT INBOX                | Selects a mailbox for message access.                    |
+| 1 UNSELECT INBOX              | Exits the selected mailbox.                              |
+| 1 FETCH <ID> all              | Retrieves data associated with a message in the mailbox. |
+| 1 CLOSE                       | Removes all messages with the Deleted flag set.          |
+| 1 LOGOUT                      | Closes the connection with the IMAP server.              |
+*** POP3 Commands
+| Command       | Description                                                 |
+|---------------+-------------------------------------------------------------|
+| USER username | Identifies the user.                                        |
+| PASS password | Authenticates the user using their password.                |
+| STAT          | Requests the number of saved emails from the server.        |
+| LIST          | Requests from the server the number and size of all emails. |
+| RETR id       | Requests the server to deliver the requested email by ID.   |
+| DELE id       | Requests the server to delete the requested email by ID.    |
+| CAPA          | Requests the server to display its capabilities.            |
+| RSET          | Requests the server to reset the transmitted information.   |
+| QUIT          | Closes the connection with the POP3 server.                 |
+*** Dangerous Settings
+Misconfigured settings within these email servers can expose critical information. Debugging executed commands or attempting to log in ~anonymously~, akin to ~FTP services~, might reveal vulnerabilities. While numerous companies opt for third-party email providers like Google or Microsoft, some manage their own mail servers for privacy and control reasons. However, this self-management presents risks. Administrators' configuration errors can inadvertently grant access to all sent and received emails, potentially containing sensitive or confidential information. Some of these critical configuration options include:
+| Setting                 | Description                                                                                |
+|-------------------------+--------------------------------------------------------------------------------------------|
+| auth_debug              | Enables all authentication debug logging.                                                  |
+| auth_debug_passwords    | Adjusts log verbosity, logging the submitted passwords, and the authentication scheme.     |
+| auth_verbose            | Logs unsuccessful authentication attempts along with their reasons.                        |
+| auth_verbose_passwords  | Logs passwords used for authentication, potentially truncating them for security purposes. |
+| auth_anonymous_username | Specifies the username to be used when logging in with the ANONYMOUS SASL mechanism.       |
+*** Footprinting the Service
+**** Nmap
+#+BEGIN_SRC bash
+  sudo nmap 10.129.14.128 -sV -p110,143,993,995 -sC
+#+END_SRC
+**** cURL
+#+BEGIN_SRC bash
+  curl -k 'imaps://10.129.14.128' --user user:p4ssw0rd
+#+END_SRC
+**** OpenSSL - TLS Encrypted Interaction POP3
+#+BEGIN_SRC bash
+  openssl s_client -connect 10.129.14.128:pop3s
+#+END_SRC
+**** OpenSSL - TLS Encrypted Interaction IMAP
+#+BEGIN_SRC bash
+  openssl s_client -connect 10.129.14.128:imaps
+#+END_SRC
+** SNMP\161(UDP)
+~Simple Network Management Protocol~ (~SNMP~) was created to monitor network devices.
+In addition, this protocol can also be used to handle configuration tasks and change settings remotely.
+In addition, configuration tasks can be handled, and settings can be made remotely using this standard.
+In addition to the pure exchange of information, SNMP also transmits control commands using agents over ~UDP~ port ~161~.
+While in classical communication, it is always the client who actively requests information from the server, SNMP also enables the use of so-called ~traps~ over UDP port 162.
+If a device is configured accordingly, an SNMP trap is sent to the client once a specific event occurs on the server-side.
+**** MIB
+The ~Management Information Base~ (~MIB~) is a standardized format to store device information in SNMP, ensuring interoperability across devices and systems. It's a textual file outlining all SNMP queryable objects, organized in a tree hierarchy via unique Object Identifiers (~OIDs~). These files ~describe~ where to find specific ~information~, along with details like data types and access rights, but don't contain the actual data.
+**** OID
+~Object Identifiers~ (~OIDs~) are numerical sequences representing nodes in a hierarchical structure. Each ~OID~ uniquely identifies a node in the tree, indicating its position and specificity. They're composed of integers concatenated with dot notation, enabling reference and lookup in the Object Identifier Registry.
+**** SNMPv1
+SNMP versions vary in their functionalities and security. ~SNMPv1~ is still prevalent in smaller networks, supporting information retrieval, device configuration, and event notifications. However, its lack of authentication or encryption makes it susceptible to unauthorized access and data interception.
+**** SNMPv2
+~SNMPv2~, specifically v2c, retains ~SNMPv1's security issues~. While it introduces additional functionalities, it suffers from transmitting the community string in plain text, lacking inherent encryption.
+**** SNMPv3
+~SNMPv3~ significantly improves security by implementing features like ~username/password~ authentication and data encryption using ~pre-shared keys~. However, its complexity in configuration surpasses its predecessors.
+**** Community Strings
+Community strings function as passwords controlling access to requested information. Despite the advancements in SNMPv3, many organizations remain on SNMPv2 due to the complexity of transitioning. This ongoing use of SNMPv2 without encryption poses security risks, allowing interception of community strings during transmission, leading to potential unauthorized access. This scenario concerns administrators, as attackers could exploit these vulnerabilities without encryption, accessing sensitive information with intercepted community strings.
+*** Default Configuration
+The default configuration of the SNMP daemon defines the basic settings for the service, which include the IP addresses, ports, MIB, OIDs, authentication, and community strings.
+**** SNMP Daemon Config
+#+BEGIN_SRC bash
+  cat /etc/snmp/snmpd.conf | grep -v "#" | sed -r '/^\s*$/d'
+
+  sysLocation    Sitting on the Dock of the Bay
+  sysContact     Me <me@example.org>
+  sysServices    72
+  master  agentx
+  agentaddress  127.0.0.1,[::1]
+  view   systemonly  included   .1.3.6.1.2.1.1
+  view   systemonly  included   .1.3.6.1.2.1.25.1
+  rocommunity  public default -V systemonly
+  rocommunity6 public default -V systemonly
+  rouser authPrivUser authpriv -V systemonly
+#+END_SRC
+*** Dangerous Settings
+Some dangerous settings that the administrator can make with SNMP are:
+| Settings                               | Description                                                                     |
+|----------------------------------------+---------------------------------------------------------------------------------|
+| rwuser noauth                          | Provides access to the full OID tree without authentication.                    |
+| rwcommunity <community string> <IPv4>  | Provides access to the full OID tree regardless of the request's origin (IPv4). |
+| rwcommunity6 <community string> <IPv6> | Provides access to the full OID tree regardless of the request's origin (IPv6). |
+*** Footprinting the Service
+For footprinting SNMP, we can use tools like ~snmpwalk~, ~onesixtyone~, and ~braa~.
+*** SNMPwalk
+#+BEGIN_SRC bash
+  snmpwalk -v2c -c public 10.129.14.128
+#+END_SRC
+*** OneSixtyOne
+#+BEGIN_SRC bash
+  sudo apt install onesixtyone
+  onesixtyone -c /opt/useful/SecLists/Discovery/SNMP/snmp.txt 10.129.14.128
+#+END_SRC
+*** Braa
+Often, when certain community strings are bound to specific IP addresses, they are named with the hostname of the host, and sometimes even symbols are added to these names to make them more challenging to identify. 
+#+BEGIN_SRC bash
+  sudo apt install braa
+  braa <community string>@<IP>:.1.3.6.*   # Syntax
+  braa public@10.129.14.128:.1.3.6.*
+#+END_SRC
+** MySQL\3306
+MySQL is an open-source relational database management system (~RDBMS~) that allows users to manage and store data.
+MySQL uses ~Structured Query Language~ (~SQL~) for querying, managing, and manipulating data within databases.
+MySQL works according to the ~client-server~ principle and consists of a MySQL server and one or more MySQL clients.
+
+The client-server architecture in MySQL (and in many other database systems) separates the responsibilities of managing the database (_server_) from interacting with it (_client_).
+*** core
+**** Mysql Server
+It's the software that actually ~stores~ and ~manages~ the databases. The server is responsible for *handling* *data storage*, *retrieval*, *access control*, and various other database-related tasks. 
+**** MySQL Clients
+The client is the interface that allows users or applications to interact with the MySQL server. It could be command-line tools like the ~mysql command~, graphical user interfaces (GUIs) like ~phpMyAdmin~, or various programming ~language libraries~ (like Python's mysql-connector, PHP's mysqli, etc.).
+**** MySQL Commands
+MySQL manages data using SQL commands; errors from SQL injections can expose unintended interactions. It manipulates data in tables, alters structures, and manages users.
+
+~MariaDB~, a MySQL derivative, emerged after the main developer left MySQL AB post-Oracle acquisition, continuing open-source database development.
+*** Default Configuration
+It is so large that entire professions, such as ~database administrator~ (~DBA~), deal with almost nothing but databases.
+
+#+BEGIN_SRC bash
+  sudo apt install mysql-server -y
+  cat /etc/mysql/mysql.conf.d/mysqld.cnf | grep -v "#" | sed -r '/^\s*$/d'
+
+  [client]
+  port		= 3306
+  socket		= /var/run/mysqld/mysqld.sock
+
+  [mysqld_safe]
+  pid-file	= /var/run/mysqld/mysqld.pid
+  socket		= /var/run/mysqld/mysqld.sock
+  nice		= 0
+
+  [mysqld]
+  skip-host-cache
+  skip-name-resolve
+  user		= mysql
+  pid-file	= /var/run/mysqld/mysqld.pid
+  socket		= /var/run/mysqld/mysqld.sock
+  port		= 3306
+  basedir		= /usr
+  datadir		= /var/lib/mysql
+  tmpdir		= /tmp
+  lc-messages-dir	= /usr/share/mysql
+  explicit_defaults_for_timestamp
+
+  symbolic-links=0
+
+  !includedir /etc/mysql/conf.d/
+#+END_SRC
+*** Dangerous Settings
+Many things can be misconfigured with MySQL:
+| Setting          | Description                                                                                       |
+|------------------+---------------------------------------------------------------------------------------------------|
+| user             | Sets which user the MySQL service will run as.                                                    |
+| password         | Sets the password for the MySQL user.                                                             |
+| admin_address    | The IP address on which to listen for TCP/IP connections on the administrative network interface. |
+| debug            | This variable indicates the current debugging settings.                                           |
+| sql_warnings     | Controls whether single-row INSERT statements produce an information string if warnings occur.    |
+| secure_file_priv | Used to limit the effect of data import and export operations.                                    |
+The settings ~user~, ~password~, and ~admin_address~ are _security-relevant_ because the entries are made in plain text.
+*** Footprinting the Service
+**** Nmap
+#+BEGIN_SRC bash
+  sudo nmap 10.129.14.128 -sV -sC -p3306 --script mysql*
+#+END_SRC
+**** Interaction with the MySQL Server
+***** Login
+with no pass
+#+BEGIN_SRC bash
+  mysql -u root -h 10.129.14.132
+#+END_SRC
+with pass
+#+BEGIN_SRC bash
+  mysql -u root -pP4SSw0rd -h 10.129.14.128
+#+END_SRC
+***** Command
+show databases:
+#+BEGIN_SRC sql
+show databases;
+#+END_SRC
+show version:
+#+BEGIN_SRC sql
+  select version();
+#+END_SRC
+use specific database:
+#+BEGIN_SRC sql
+  use mysql;
+#+END_SRC
+show tables:
+#+BEGIN_SRC sql
+  show tables;	
+#+END_SRC
+
+The most important databases for the MySQL server are the ~system schema~ (~sys~) and ~information schema~ (~information_schema~). The system schema contains tables, information, and metadata necessary for management.
+change table:
+#+BEGIN_SRC sql
+  use sys;
+#+END_SRC
+
+show tables:
+#+BEGIN_SRC sql
+  show tables;  
+
+  +-----------------------------------------------+
+  | Tables_in_sys                                 |
+  +-----------------------------------------------+
+  | host_summary                                  |
+  | host_summary_by_file_io                       |
+  | host_summary_by_file_io_type                  |
+  | host_summary_by_stages                        |
+  | host_summary_by_statement_latency             |
+  | host_summary_by_statement_type                |
+  | innodb_buffer_stats_by_schema                 |
+  | innodb_buffer_stats_by_table                  |
+  | innodb_lock_waits                             |
+  | io_by_thread_by_latency                       |
+  ...SNIP...
+  | x$waits_global_by_latency                     |
+  +-----------------------------------------------+	
+#+END_SRC
+
+#+BEGIN_SRC sql
+  select host, unique_users from host_summary;
+  +-------------+--------------+                   
+  | host        | unique_users |                   
+  +-------------+--------------+                   
+  | 10.129.14.1 |            1 |                   
+  | localhost   |            2 |                   
+  +-------------+--------------+   
+#+END_SRC
+
+The ~information schema~ is also a database that contains metadata. However, this metadata is mainly retrieved from the ~system schema~ database.
+** MSSQL\1433
+"~MSSQL~," it refers to Microsoft SQL Server, a relational database management system developed by Microsoft. Like MySQL, it's used to store and retrieve data as requested by other software applications. However, MSSQL is a proprietary system, unlike MySQL, which is open-source.
+
+Microsoft SQL Server is known for its robustness, scalability, and integration with other Microsoft products. It supports various editions catering to different needs, ranging from small applications to large enterprise-level solutions. It utilizes ~Transact-SQL~ (T-SQL), a _variant of SQL_, for querying and managing data.
+*** Core
+**** MSSQL Clients
+[[https://docs.microsoft.com/en-us/sql/ssms/download-sql-server-management-studio-ssms?view=sql-server-ver15][SQL Server Management Studio]] (~SSMS~) comes as a feature that can be installed with the MSSQL install package or can be downloaded & installed separately.
+Keep in mind that since SSMS is a client-side application, it can be installed and used on any system an admin or developer is planning to manage the database from.
+Many other clients can be used to access a database running on MSSQL:
+- [[https://docs.microsoft.com/en-us/sql/tools/mssql-cli?view=sql-server-ver15][mssql-cli]]
+- [[https://docs.microsoft.com/en-us/sql/powershell/sql-server-powershell?view=sql-server-ver15][SQL Server PowerShell]]
+- [[https://www.heidisql.com/][HeidiSQL]]
+- [[https://www.macsqlclient.com/][SQLPro]]
+- [[https://github.com/SecureAuthCorp/impacket/blob/master/examples/mssqlclient.py][Impacket's mssqlclient.py]]
+**** MSSQL Database
+| Default System Database | Description                                                                                                               |
+|-------------------------+---------------------------------------------------------------------------------------------------------------------------|
+| master                  | Tracks all system information for an SQL server instance.                                                                 |
+| model                   | Serves as a template database for new database creation. Settings changed here reflect in subsequently created databases. |
+| msdb                    | Utilized by SQL Server Agent for scheduling jobs and alerts.                                                              |
+| tempdb                  | Dedicated for storing temporary objects.                                                                                  |
+| resource                | Read-only database housing system objects bundled with SQL Server.                                                        |
+*** Default Configuration
+When an admin initially installs and configures MSSQL to be network accessible, the SQL service will likely run as ~NT SERVICE\MSSQLSERVER~.
+Authentication being set to ~Windows Authentication~~ means that the underlying Windows OS will process the login request and use either the local SAM database or the domain controller (hosting Active Directory) before allowing connectivity to the database management system.
+*** Dangerous Settings
+In an IT administrator's shoes during an engagement, it's crucial to consider potential ~misconfigurations~ that might compromise systems. The IT landscape is fast-paced, often juggling multiple projects, leading to the potential for errors—where even a small misconfiguration can jeopardize a critical server or service.
+
+This risk extends to MSSQL configurations, where admins might inadvertently set up:
+- ~Unencrypted MSSQL Client Connections~: Failure to use encryption between clients and the MSSQL server, exposing data during transmission.
+- ~Self-Signed Certificates for Encryption~: Reliance on self-signed certificates, vulnerable to spoofing, despite using encryption, risking compromised security.
+- ~Usage of Named Pipes~: Vulnerability arising from the use of named pipes, potentially open to exploitation.
+- ~Weak or Default 'sa' Credentials~: Overlooking the disabling of default 'sa' (~system administrator~) credentials, leaving a significant security loophole if left unchanged or set with weak passwords.
+*** Footprinting the Service
+**** Nmap
+#+BEGIN_SRC bash
+  sudo nmap --script ms-sql-info,ms-sql-empty-password,ms-sql-xp-cmdshell,ms-sql-config,ms-sql-ntlm-info,ms-sql-tables,ms-sql-hasdbaccess,ms-sql-dac,ms-sql-dump-hashes --script-args mssql.instance-port=1433,mssql.username=sa,mssql.password=,mssql.instance-name=MSSQLSERVER -sV -p 1433 10.129.201.248
+#+END_SRC
+**** Mwtasploit
+We can also use Metasploit to run an auxiliary scanner called ~mssql_ping~.
+#+BEGIN_SRC bash
+  msf6 auxiliary(scanner/mssql/mssql_ping) > set rhosts 10.129.201.248
+
+  rhosts => 10.129.201.248
+
+
+  msf6 auxiliary(scanner/mssql/mssql_ping) > run
+
+  [*] 10.129.201.248:       - SQL Server information for 10.129.201.248:
+  [+] 10.129.201.248:       -    ServerName      = SQL-01
+  [+] 10.129.201.248:       -    InstanceName    = MSSQLSERVER
+  [+] 10.129.201.248:       -    IsClustered     = No
+  [+] 10.129.201.248:       -    Version         = 15.0.2000.5
+  [+] 10.129.201.248:       -    tcp             = 1433
+  [+] 10.129.201.248:       -    np              = \\SQL-01\pipe\sql\query
+  [*] 10.129.201.248:       - Scanned 1 of 1 hosts (100% complete)
+  [*] Auxiliary module execution completed
+#+END_SRC
+**** Mssqlclient.py
+If we can guess or gain access to credentials, this allows us to remotely connect to the MSSQL server and start interacting with databases using T-SQL (~Transact-SQL~).
+#+BEGIN_SRC bash
+  python3 mssqlclient.py Administrator@10.129.201.248 -windows-auth
+#+END_SRC
+** Oracle TNS\1521
+The ~Oracle Transparent Network Substrate~ (~TNS~) server is a communication protocol that facilitates communication between Oracle databases and applications over networks.
+TNS supports various networking protocols between Oracle databases and client applications, such as ~IPX/SPX~ and ~TCP/IP~ protocol stacks.
+Over time, TNS has been updated to support newer technologies, including IPv6 and SSL/TLS encryption which makes it more suitable for the following purposes:
+- Name Resolution
+- Connection management
+- Load balancing
+- Security
+*** Default Configuration
+The configuration files for Oracle TNS are called ~tnsnames.ora~ and ~listener.ora~ and are typically located in the ~ORACLE_HOME/network/admin~ directory. The plain text file contains configuration information for Oracle database instances and other network services that use the TNS protocol.
+
+Each database or service has a unique entry in the [[https://docs.oracle.com/cd/E11882_01/network.112/e10835/tnsnames.htm#NETRF007][tnsnames.ora]] file, containing the necessary information for clients to connect to the service.
+_Tnsnames.ora_
+#+BEGIN_SRC bash
+  ORCL =
+    (DESCRIPTION =
+      (ADDRESS_LIST =
+	(ADDRESS = (PROTOCOL = TCP)(HOST = 10.129.11.102)(PORT = 1521))
+      )
+      (CONNECT_DATA =
+	(SERVER = DEDICATED)
+	(SERVICE_NAME = orcl)
+      )
+    ) 
+#+END_SRC
+Here we can see a service called ~ORCL~, which is listening on port ~TCP/1521~ on the IP address ~10.129.11.102~. Clients should use the service name orcl when connecting to the service.
+
+_Listener.ora_
+#+BEGIN_SRC bash
+  SID_LIST_LISTENER =
+    (SID_LIST =
+      (SID_DESC =
+	(SID_NAME = PDB1)
+	(ORACLE_HOME = C:\oracle\product\19.0.0\dbhome_1)
+	(GLOBAL_DBNAME = PDB1)
+	(SID_DIRECTORY_LIST =
+	  (SID_DIRECTORY =
+	    (DIRECTORY_TYPE = TNS_ADMIN)
+	    (DIRECTORY = C:\oracle\product\19.0.0\dbhome_1\network\admin)
+	  )
+	)
+      )
+    )
+
+  LISTENER =
+    (DESCRIPTION_LIST =
+      (DESCRIPTION =
+	(ADDRESS = (PROTOCOL = TCP)(HOST = orcl.inlanefreight.htb)(PORT = 1521))
+	(ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1521))
+      )
+    )
+
+    ADR_BASE_LISTENER = C:\oracle
+#+END_SRC
+In short, the client-side Oracle Net Services software uses the tnsnames.ora file to resolve service names to network addresses, while the listener process uses the listener.ora file to determine the services it should listen to and the behavior of the listener.
+
+Oracle databases can be protected by using so-called PL/SQL Exclusion List (~PlsqlExclusionList~). It is a user-created text file that needs to be placed in the ~$ORACLE_HOME/sqldeveloper~ directory, and it contains the names of PL/SQL packages or types that should be excluded from execution.
+| Setting            | Description                                                                                       |
+|--------------------+---------------------------------------------------------------------------------------------------|
+| DESCRIPTION        | Provides a descriptor for the database and its connection type.                                   |
+| ADDRESS            | Network address of the database, including the hostname and port number.                          |
+| PROTOCOL           | Network protocol used for communication with the server.                                          |
+| PORT               | Port number used for communication with the server.                                               |
+| CONNECT_DATA       | Specifies connection attributes: service name or SID, protocol, and database instance identifier. |
+| INSTANCE_NAME      | Name of the database instance the client aims to connect.                                         |
+| SERVICE_NAME       | Name of the service the client intends to connect to.                                             |
+| SERVER             | Type of server used for the database connection (e.g., dedicated or shared).                      |
+| USER               | Username for authenticating with the database server.                                             |
+| PASSWORD           | Password for authenticating with the database server.                                             |
+| SECURITY           | Type of security for the connection.                                                              |
+| VALIDATE_CERT      | Whether to validate the certificate using SSL/TLS.                                                |
+| SSL_VERSION        | Version of SSL/TLS to use for the connection.                                                     |
+| CONNECT_TIMEOUT    | Time limit in seconds for the client to establish a connection to the database.                   |
+| RECEIVE_TIMEOUT    | Time limit in seconds for the client to receive a response from the database.                     |
+| SEND_TIMEOUT       | Time limit in seconds for the client to send a request to the database.                           |
+| SQLNET.EXPIRE_TIME | Time limit in seconds for the client to detect a failed connection.                               |
+| TRACE_LEVEL        | Level of tracing for the database connection.                                                     |
+| TRACE_DIRECTORY    | Directory where the trace files are stored.                                                       |
+| TRACE_FILE_NAME    | Name of the trace file.                                                                           |
+| LOG_FILE           | File where log information is stored.                                                             |
+
+*** Tools
+Before we can enumerate the TNS listener and interact with it, we need to download a few packages and tools for our Pwnbox instance in case it does not have these already.
+#+BEGIN_SRC  bash
+  #!/bin/bash
+
+  sudo apt-get install libaio1 python3-dev alien python3-pip -y
+  git clone https://github.com/quentinhardy/odat.git
+  cd odat/
+  git submodule init
+  git submodule update
+  sudo apt install oracle-instantclient-basic oracle-instantclient-devel oracle-instantclient-sqlplus -y
+  pip3 install cx_Oracle
+  sudo apt-get install python3-scapy -y
+  sudo pip3 install colorlog termcolor pycryptodome passlib python-libnmap
+  sudo pip3 install argcomplete && sudo activate-global-python-argcomplete
+#+END_SRC
+**** ODAT
+#+BEGIN_SRC bash
+  ./odat.py -h
+#+END_SRC
+~Oracle Database Attacking Tool~ (~ODAT~) is an open-source penetration testing tool written in Python and designed to enumerate and exploit vulnerabilities in Oracle databases.
+**** Nmap
+#+BEGIN_SRC bash
+  sudo nmap -p1521 -sV 10.129.204.235 --open
+#+END_SRC
+**** Nmap - SID Bruteforcing
+The ~SIDs~ are an essential part of the connection process, as it identifies the specific instance of the database the client wants to connect to.
+If the client specifies an incorrect SID, the connection attempt will fail.
+*There are various ways to enumerate, or better said, guess ~SIDs~. Therefore we can use tools like ~nmap~, ~hydra~, ~odat~, and others. Let us use ~nmap~ first.
+#+BEGIN_SRC bash
+  sudo nmap -p1521 -sV 10.129.204.235 --open --script oracle-sid-brute
+#+END_SRC
+**** ODAT
+#+BEGIN_SRC bash
+  ./odat.py all -s 10.129.204.235
+#+END_SRC
+**** SQLplus - Log In
+#+BEGIN_SRC bash
+  sqlplus scott/tiger@10.129.204.235/XE
+#+END_SRC
+
+If you come across the following error sqlplus: error while loading shared libraries: libsqlplus.so: cannot open shared object file: No such file or directory, please execute the below, taken from [[https://stackoverflow.com/questions/27717312/sqlplus-error-while-loading-shared-libraries-libsqlplus-so-cannot-open-shared][here]].
+#+BEGIN_SRC bash
+  sudo sh -c "echo /usr/lib/oracle/12.2/client64/lib > /etc/ld.so.conf.d/oracle-instantclient.conf";sudo ldconfig
+#+END_SRC
+**** Oracle RDBMS - Interaction
+#+BEGIN_SRC bash
+  SQL> select table_name from all_tables;
+  SQL> select * from user_role_privs;
+#+END_SRC
+**** Oracle RDBMS - Database Enumeration
+Here, the user scott has no administrative privileges. However, we can try using this account to log in as the System Database Admin (sysdba), giving us higher privileges. This is possible when the user scott has the appropriate privileges typically granted by the database administrator or used by the administrator him/herself.
+#+BEGIN_SRC bash
+  sqlplus scott/tiger@10.129.204.235/XE as sysdba
+#+END_SRC
+**** Oracle RDBMS - Extract Password Hashes
+#+BEGIN_SRC bash
+  SQL> select name, password from sys.user$;
+#+END_SRC
+**** Oracle RDBMS - File Upload
+#+BEGIN_SRC bash
+  ./odat.py utlfile -s 10.129.204.235 -d XE -U scott -P tiger --sysdba --putFile C:\\inetpub\\wwwroot testing.txt ./testing.txt
+#+END_SRC
+
+and
+
+#+BEGIN_SRC bash
+  curl -X GET http://10.129.204.235/testing.txt
+#+END_SRC
+** IPMI\623
+~Intelligent Platform Management Interface~ (~IPMI~) is a set of standardized specifications for hardware-based host management systems used for system management and monitoring.
+IPMI provides ~sysadmins~ with the ~ability~ to ~manage~ and ~monitor~ systems even if they are powered off or in an unresponsive state.
+It operates using a direct network connection to the system's hardware and does not require access to the operating system via a login shell.
+IPMI can also be used for:
+- Before the OS has booted to modify BIOS settings
+- When the host is fully powered down
+- Access to a host after a system failure
+When not being used for these tasks, IPMI can monitor a range of different things such as system temperature, voltage, fan status, and power supplies. It can also be used for querying inventory information, reviewing hardware logs, and alerting using SNMP. The host system can be powered off, but the IPMI module requires a power source and a LAN connection to work correctly.
+This addressing mechanism is an absolute prerequisite for successfully transmitting data and network monitoring using SNMP.
+To function, IPMI requires the following components:
+- Baseboard Management Controller (BMC) - A micro-controller and essential component of an IPMI
+- Intelligent Chassis Management Bus (ICMB) - An interface that permits communication from one chassis to another
+- Intelligent Platform Management Bus (IPMB) - extends the BMC
+- IPMI Memory - stores things such as the system event log, repository store data, and more
+- Communications Interfaces - local system interfaces, serial and LAN interfaces, ICMB and PCI Management Bus
+*** Footprinting the Service
+IPMI communicates over port ~623 UDP~. Systems that use the IPMI protocol are called ~Baseboard Management Controllers~ (BMCs). BMCs are typically implemented as embedded ARM systems running Linux, and connected directly to the host's motherboard. BMCs are built into many motherboards but can also be added to a system as a PCI card.
+**** Nmap
+#+BEGIN_SRC bash
+  sudo nmap -sU --script ipmi-version -p 623 ilo.inlanfreight.local
+#+END_SRC
+**** Metasploit Version Scan
+#+BEGIN_SRC bash
+  msf6 > use auxiliary/scanner/ipmi/ipmi_version 
+  msf6 auxiliary(scanner/ipmi/ipmi_version) > set rhosts 10.129.42.195
+  msf6 auxiliary(scanner/ipmi/ipmi_version) > show options 
+
+  Module options (auxiliary/scanner/ipmi/ipmi_version):
+
+     Name       Current Setting  Required  Description
+     ----       ---------------  --------  -----------
+     BATCHSIZE  256              yes       The number of hosts to probe in each set
+     RHOSTS     10.129.42.195    yes       The target host(s), range CIDR identifier, or hosts file with syntax 'file:<path>'
+     RPORT      623              yes       The target port (UDP)
+     THREADS    10               yes       The number of concurrent threads
+
+
+  msf6 auxiliary(scanner/ipmi/ipmi_version) > run
+
+  [*] Sending IPMI requests to 10.129.42.195->10.129.42.195 (1 hosts)
+  [+] 10.129.42.195:623 - IPMI - IPMI-2.0 UserAuth(auth_msg, auth_user, non_null_user) PassAuth(password, md5, md2, null) Level(1.5, 2.0) 
+  [*] Scanned 1 of 1 hosts (100% complete)
+  [*] Auxiliary module execution completed
+#+END_SRC
+*** Dangerous Settings
+If default credentials do not work to access a BMC, we can turn to a flaw in the RAKP protocol in IPMI 2.0. During the authentication process, the server sends a salted SHA1 or MD5 hash of the user's password to the client before authentication takes place.
+And crack them with:
+#+BEGIN_SRC bash
+  hashcat -m 7300 ipmi.txt -a 3 ?1?1?1?1?1?1?1?1 -1 ?d?u
+#+END_SRC
+***** Metasploit Dumping Hashes
+#+BEGIN_SRC bash
+  msf6 > use auxiliary/scanner/ipmi/ipmi_dumphashes 
+  msf6 auxiliary(scanner/ipmi/ipmi_dumphashes) > set rhosts 10.129.42.195
+  msf6 auxiliary(scanner/ipmi/ipmi_dumphashes) > show options 
+
+  Module options (auxiliary/scanner/ipmi/ipmi_dumphashes):
+
+     Name                 Current Setting                                                    Required  Description
+     ----                 ---------------                                                    --------  -----------
+     CRACK_COMMON         true                                                               yes       Automatically crack common passwords as they are obtained
+     OUTPUT_HASHCAT_FILE                                                                     no        Save captured password hashes in hashcat format
+     OUTPUT_JOHN_FILE                                                                        no        Save captured password hashes in john the ripper format
+     PASS_FILE            /usr/share/metasploit-framework/data/wordlists/ipmi_passwords.txt  yes       File containing common passwords for offline cracking, one per line
+     RHOSTS               10.129.42.195                                                      yes       The target host(s), range CIDR identifier, or hosts file with syntax 'file:<path>'
+     RPORT                623                                                                yes       The target port
+     THREADS              1                                                                  yes       The number of concurrent threads (max one per host)
+     USER_FILE            /usr/share/metasploit-framework/data/wordlists/ipmi_users.txt      yes       File containing usernames, one per line
+
+
+
+  msf6 auxiliary(scanner/ipmi/ipmi_dumphashes) > run
+
+  [+] 10.129.42.195:623 - IPMI - Hash found: ADMIN:8e160d4802040000205ee9253b6b8dac3052c837e23faa631260719fce740d45c3139a7dd4317b9ea123456789abcdefa123456789abcdef140541444d494e:a3e82878a09daa8ae3e6c22f9080f8337fe0ed7e
+  [+] 10.129.42.195:623 - IPMI - Hash for user 'ADMIN' matches password 'ADMIN'
+  [*] Scanned 1 of 1 hosts (100% complete)
+  [*] Auxiliary module execution completed
+#+END_SRC
+* Remote Management Protocols
+** Linux
+*** SSH\22
+~Secure Shell~ (~SSH~) facilitates secure, encrypted connections between computers over potentially insecure networks, typically on TCP port 22.
+When managing a remote host, SSH allows interaction via command line or GUI. It enables ~sending commands~, ~file transfers~, and ~port forwarding~, necessitating a secure SSH connection and authentication.
+**** Public Key Authentication
+***** Server and Client Authentication
+Initially , the SSH server and client authenticate each other. The server sends a certificate to verify its identity, reducing the risk of third-party intervention during the initial connection.
+***** Client Authentication
+Following server authentication, the client must prove access authorization. Typically, the server possesses an encrypted hash of the user's password. However, for enhanced security and convenience, public key and private key pairs are used instead.
+****** Private Key
+Individual to the ~user's computer~ and secured with a passphrase stronger than typical passwords, the private key remains solely on the user's computer, ensuring its secrecy. 
+****** Public Key on Server
+The server generates a cryptographic challenge based on the client's public key and sends it. The client decrypts this challenge with its private key, providing the solution to the server, thereby confirming a legitimate connection.
+**** Default Configuration
+The [[https://www.ssh.com/academy/ssh/sshd_config][sshd_config]] file, responsible for the OpenSSH server, has only a few of the settings configured by default.
+#+BEGIN_SRC bash
+  cat /etc/ssh/sshd_config  | grep -v "#" | sed -r '/^\s*$/d'
+#+END_SRC
+**** Dangerous Settings
+| Setting                | Description                                 |
+|------------------------+---------------------------------------------|
+| PasswordAuthentication | Allows password-based authentication.       |
+| PermitEmptyPasswords   | Allows the use of empty passwords.          |
+| PermitRootLogin        | Allows logging in as the root user.         |
+| Protocol               | Uses an outdated version of encryption.     |
+| X11Forwarding          | Allows X11 forwarding for GUI applications. |
+| AllowTcpForwarding     | Allows forwarding of TCP ports.             |
+| PermitTunnel           | Allows tunneling.                           |
+| DebianBanner           | Displays a specific banner when logging in. |
+: Allowing password authentication allows us to brute-force a known username for possible passwords. Many different methods can be used to guess the passwords of users. For this purpose, specific patterns` are usually used to mutate the most commonly used passwords and, frighteningly, correct them.
+**** Footprinting the Service
+One of the tools we can use to fingerprint the SSH server is [[https://github.com/jtesta/ssh-audit][ssh-audit]].
+#+BEGIN_SRC bash
+  git clone https://github.com/jtesta/ssh-audit.git && cd ssh-audit
+  ./ssh-audit.py 10.129.14.132
+#+END_SRC
+***** Change Authentication Method
+#+BEGIN_SRC bash
+  ssh -v cry0l1t3@10.129.14.132
+#+END_SRC
+
+For potential brute-force attacks, we can specify the authentication method with the SSH client option ~PreferredAuthentications~.
+#+BEGIN_SRC bash
+  ssh -v cry0l1t3@10.129.14.132 -o PreferredAuthentications=password
+#+END_SRC
+
+*** Rsync\873
+[[https://linux.die.net/man/1/rsync][Rsync]] is a fast and efficient tool for locally and remotely copying files. It can be used to copy files locally on a given machine and to/from remote hosts.
+By default, it uses port ~873~ and can be configured to use ssh.
+**** Scann
+#+BEGIN_SRC bash
+  sudo nmap -sV -p 873 127.0.0.1
+#+END_SRC
+**** Probing for Accessible Shares
+#+BEGIN_SRC bash
+  nc -nv 127.0.0.1 873
+#+END_SRC
+**** Enumerating an Open Share
+#+BEGIN_SRC bash
+  rsync -av --list-only rsync://127.0.0.1/<share>
+#+END_SRC
+
+If Rsync is configured to use SSH to transfer files, we could modify our commands to include the ~-e ssh~ flag, or -e "~ssh -p2222~" if a non-standard port is in use for SSH.
+*** R-Services\512,513,514
+R-Services are a suite of services hosted to enable remote access or issue commands between Unix hosts over TCP/IP.
+No longer used in favor of ssh, much like ~telnet~, r-services transmit information from client to server(and vice versa.) over the network in an unencrypted format, making it possible for attackers to intercept network traffic (passwords, login information, etc.) by performing man-in-the-middle (MITM) attacks.
+The [[https://en.wikipedia.org/wiki/Berkeley_r-commands][R-commands]] suite consists of the following programs:
+- rcp (~remote copy~)
+- rexec (~remote execution~)
+- rlogin (~remote login~)
+- rsh (~remote shell~)
+- rstat
+- ruptime
+- rwho (~remote who~)
+
+The ~/etc/hosts.equiv~ file contains a list of trusted hosts and is used to grant access to other systems on the network.
+#+BEGIN_SRC bash
+  cat /etc/hosts.equiv
+#+END_SRC
+**** Nmap
+#+BEGIN_SRC bash
+  sudo nmap -sV -p 512,513,514 10.0.17.2
+#+END_SRC
+**** Logging in Using Rlogin
+#+BEGIN_SRC bash
+  rlogin 10.0.17.2 -l htb-student
+#+END_SRC
+**** Listing Authenticated Users Using Rwho
+#+BEGIN_SRC bash
+  rwho
+
+  root     web01:pts/0 Dec  2 21:34
+  htb-student     workstn01:tty1  Dec  2 19:57  2:25   
+#+END_SRC
+**** Listing Authenticated Users Using Rusers
+#+BEGIN_SRC bash
+  rusers -al 10.0.17.5
+#+END_SRC
+** Windows
+The main components used for remote management of Windows and Windows servers are the following:
+- Remote Desktop Protocol (~RDP~)
+- Windows Remote Management (~WinRM~)
+- Windows Management Instrumentation (~WMI~)
+*** RDP\3389 
+RDP works at the application layer in the TCP/IP reference model, typically utilizing TCP port ~3389~ as the ~transport protocol~.
+For an RDP session to be established, both the network firewall and the firewall on the server must allow connections from the outside.
+In addition, port forwarding must be set up on the NAT router in the direction of the server.
+RDP has handled [[https://en.wikipedia.org/wiki/Transport_Layer_Security][Transport Layer Security]] (~TLS/SSL~) since Windows Vista, which means that all data, and especially the login process, is protected in the network by its good encryption.
+The ~Remote Desktop~ service is installed by default on Windows servers and does not require additional external applications.
+This service can be activated using the ~Server Manager~ and comes with the default setting to allow connections to the service only to hosts with [[https://en.wikipedia.org/wiki/Network_Level_Authentication][Network level authentication]] (~NLA~).
+**** Footprinting the Service
+Scanning the RDP service can quickly give us a lot of information about the host. For example, we can determine if ~NLA~ is enabled on the server or not, the product version, and the hostname.
+***** Nmap
+#+BEGIN_SRC bash
+  nmap -sV -sC 10.129.201.248 -p3389 --script rdp*
+#+END_SRC
+In addition, we can use ~--packet-trace~ to track the individual packages and inspect their contents manually. We can see that the ~RDP cookies~ (~mstshash=nmap~) used by Nmap to interact with the RDP server can be identified by threat hunters and various security services such as Endpoint Detection and Response (~EDR~), and can lock us out as penetration testers on hardened networks.
+#+BEGIN_SRC bash
+  nmap -sV -sC 10.129.201.248 -p3389 --packet-trace --disable-arp-ping -n
+#+END_SRC
+**** RDP Security Check - Install
+A Perl script named [[https://github.com/CiscoCXSecurity/rdp-sec-check][rdp-sec-check.pl]] has also been developed by [[https://github.com/CiscoCXSecurity][Cisco CX Security Labs]] that can unauthentically identify the security settings of RDP servers based on the handshakes.
+#+BEGIN_SRC bash
+  sudo cpan
+#+END_SRC
+**** RDP Security Check
+#+BEGIN_SRC bash
+  git clone https://github.com/CiscoCXSecurity/rdp-sec-check.git && cd rdp-sec-check
+  ./rdp-sec-check.pl 10.129.201.248
+#+END_SRC
+**** Initiate an RDP Session
+Authentication and connection to such RDP servers can be made in several ways. For example, we can connect to RDP servers on Linux using ~xfreerdp~, ~rdesktop~, or ~Remmina~ and interact with the GUI of the server accordingly.
+#+BEGIN_SRC bash
+  xfreerdp /u:cry0l1t3 /p:"P455w0rd!" /v:10.129.201.248
+#+END_SRC
+*** WinRM\5985,5986
+The ~Windows Remote Management~ (~WinRM~) is a simple Windows integrated remote management protocol based on the command line. WinRM uses the ~Simple Object Access Protocol~ (~SOAP~) to establish connections to remote hosts and their applications.
+Another component that fits WinRM for administration is Windows Remote Shell (~WinRS~), which lets us execute arbitrary commands on the remote system.
+**** Footprinting the Service
+As we already know, WinRM uses TCP ports 5985 (~HTTP~) and 5986 (~HTTPS~) by default, which we can scan using Nmap.
+***** Nmap WinRM
+#+BEGIN_SRC bash
+  nmap -sV -sC 10.129.201.248 -p5985,5986 --disable-arp-ping -n
+#+END_SRC
+
+If we want to find out whether one or more remote servers can be reached via WinRM, we can easily do this with the help of PowerShell. The [[https://docs.microsoft.com/en-us/powershell/module/microsoft.wsman.management/test-wsman?view=powershell-7.2][West-WsMan]] ~cmdlet~ is responsible for this, and the host's name in question is passed to it.
+***** Initiate an RDB in UNIX
+In Linux-based environments, we can use the tool called [[https://github.com/Hackplayers/evil-winrm][evil-winrm]], another penetration testing tool designed to interact with WinRM.
+#+BEGIN_SRC bash
+  evil-winrm -i 10.129.201.248 -u Cry0l1t3 -p P455w0rD!
+#+END_SRC
+*** WMI\135
+Windows Management Instrumentation (WMI) is Microsoft's implementation and also an extension of the Common Information Model (CIM), core functionality of the standardized Web-Based Enterprise Management (WBEM) for the Windows platform.
+WMI is typically accessed via PowerShell, VBScript, or the Windows Management Instrumentation Console (WMIC).
+**** Footprinting the Service
+The initialization of the WMI communication always takes place on TCP port 135, and after the successful establishment of the connection, the communication is moved to a random port.
+
+Program [[https://github.com/SecureAuthCorp/impacket/blob/master/examples/wmiexec.py][wmiexec.py]] from the Impacket toolkit can be used for this.
+#+BEGIN_SRC bash
+  /usr/share/doc/python3-impacket/examples/wmiexec.py Cry0l1t3:"P455w0rD!"@10.129.201.248 "hostname"
+#+END_SRC
+
